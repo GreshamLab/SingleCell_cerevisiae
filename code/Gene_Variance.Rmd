@@ -1,0 +1,479 @@
+---
+title: "Gene Variance"
+author: "Simone Zaghen"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    toc: true
+    number_section: true
+    toc_float: 
+      collapsed: false
+      smooth_scroll: true
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/Gene_Variance/") })
+
+---
+
+# Load packages
+
+```{r, results='hide', message=FALSE}
+#Load packages from bioconductor
+library(biomaRt)
+library(clusterProfiler)
+library(pathview)
+library(enrichplot)
+
+#Install genome wide annotation for Yeast
+library(org.Sc.sgd.db)
+
+#Install and load packages from CRAN
+library('tidyverse')
+library('reshape2')
+library(conflicted)
+
+#Solve conflicts
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("mutate", "dplyr")
+conflict_prefer("setdiff", "base")
+
+#create folders
+if (!dir.exists("../results/")){dir.create("../results/")}
+if (!dir.exists("../results/Gene_Variance")){dir.create("../results/Gene_Variance/")}
+if (!dir.exists("../scratch/")){dir.create("../scratch/")}
+
+```
+
+# Load dataset and filter 
+
+Here I'm loading the dataset from [this paper](https://doi.org/10.1101/2023.09.21.558277).
+
+The dataset can be downloaded from [supplementary data 1](https://zenodo.org/records/8371195).
+
+The dataset "is single-cell response to rapamycin count data deposited in GEO with accession GSE242556. It is a 173348 rows × 5847 columns TSV.GZ file where the first row is a header, the first 5843 columns are integer gene counts, and the final 4 columns ('Gene', 'Replicate', 'Pool', and 'Experiment') are cell-specific metadata."
+
+```{r, message = F}
+rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
+
+```
+
+To start the analysis, we only look at the WT strain and we look at the first two timepoints, which correspond to continuously sampled cells before rapamycin treatment (see pre-print for details).
+
+```{r, message = F}
+# Filter for the wt strain in the first two timepoints of the experiment
+df <- rawdata %>%
+  filter(Pool %in% c("1","2")) %>% #timepoints before rapamycin treatment
+  filter(Gene %in% "WT") %>% #only wt strain
+  select(1:5843) %>% #exclude the metadata
+  drop_na()
+
+```
+
+Check how many cells are retained after filtering
+
+```{r, echo = F}
+tmp <- rbind(rawdata = dim(rawdata[1:5843]), filtered = dim(df))
+colnames(tmp) <- c("#cells", "#genes")
+tmp
+
+```
+
+# Normalize data
+
+Calculate and plot the gene count for each cell before normalizing the data
+
+```{r, fig.align='center'}
+tmp <- data.frame(Counts = rowSums(df))
+
+ggplot(tmp, aes(x = Counts)) +
+  geom_histogram(binwidth=100,
+                 color = "grey",
+                 fill = "grey") +
+  scale_x_continuous(breaks = seq(0, max(tmp$Counts), by = 2000)) +
+  xlab("Sum of gene counts per cell") +
+  ylab("Frequency") +
+  ggtitle("Gene count distribution for each cell") +
+  theme_classic()
+
+```
+Genes with very high counts can be considered artifacts. I will thus remove cells for which the gene counts are above 15000. 
+Then normalize the data to account for sequencing depth. Scale the data to 10,000 (as if all cells have 10k UMIs overall).
+
+```{r}
+df <- df %>% 
+  filter(rowSums(.) < 15000) #remove counts above 15000
+
+df_norm <- df*10000/rowSums(df) #normalize
+
+```
+
+# Calculate statistics and plot
+
+Calculate different stats, including the coefficient of variation (CV). The CV shows the extent of variability in relation to the mean of the population and can be used to identify highly variable genes across a population of cells.
+
+```{r}
+df_mean = apply(df_norm, 2, mean, na.rm = T) #average exp of each gene
+df_sd = apply(df_norm, 2, sd) #average sd of each gene
+df_CV = df_sd/df_mean #calculate coefficient of variation
+
+df_stats <- rbind(mean = df_mean, #merge stats in one df
+                  sd = df_sd, 
+                  CV = df_CV)
+
+df_stats <- as.data.frame(t(df_stats)) #transpose to make df ggplot friendly
+df_stats <- rownames_to_column(df_stats, "genes") #add gene name column
+
+rm(list = c("df_mean", "df_sd", "df_CV")) #clean up workspace
+
+```
+
+Check distribution of the different stats
+
+```{r, fig.show='hold'}
+#free scale
+df_stats %>%
+  melt(id = "genes") %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(binwidth=1,
+                 color = "grey",
+                 fill = "grey") +
+  xlab("value") +
+  ylab("frequency") +
+  ggtitle("Free scale") +
+  theme_classic() +
+  facet_wrap(~ variable, scales = "free") 
+
+#zoom in
+df_stats %>%
+  melt(id = "genes") %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(binwidth=1,
+                 color = "grey",
+                 fill = "grey") +
+  xlim(0,15) +
+  xlab("value") +
+  ylab("frequency") +
+  ggtitle("Zoom in") +
+  theme_classic() +
+  facet_wrap(~ variable, scales = "free_y") 
+
+```
+
+Plot the CV against the mean. 
+
+```{r, fig.show='hold', out.width='50%'}
+#linear scale
+#No limits
+ggplot(df_stats,
+       aes(x = mean,
+           y = CV)) +
+  ggtitle("Linear scale without setting limits") +
+  geom_point() 
+
+#Limit scale
+ggplot(df_stats,
+       aes(x = mean,
+           y = CV)) +
+  xlim(0.01,100) +
+  ylim(0,7.5) +
+  ggtitle("Linear scale with limits") +
+  geom_point()
+
+```
+
+Only retain data with a mean gene count above 0.01. Genes with a lower mean count than 0.01 can be considered noise. This filtering removes `r length(which(df_stats$mean < 0.01))` genes from the dataset.
+Calculate the log of the data, and plot.
+
+```{r }
+df_stats %>%
+  filter(mean > 0.01) %>%
+  drop_na() %>%
+  ggplot(aes(x = log10(mean), #calculate log and plot 
+           y = log10(CV))) +
+  geom_point() +
+  ggtitle("log of x and y, mean > 0.01")
+
+```
+
+# Fit linear model and calculate residuals
+
+Build a regression model using the mean and CV. Then calculate the residuals and look at the biggest residuals. These ones are potentially the most interesting genes, so check their biological function.
+
+## Fit the linear model 
+
+```{r}
+df_stats <- filter(df_stats, mean > 0.01) %>%
+  drop_na()
+row.names(df_stats) <- df_stats$genes
+
+reg_model <- lm(log10(CV) ~ log10(mean), data = df_stats, row.names(df_stats$genes))
+summary(reg_model)
+
+```
+
+Plot data and regression line
+
+```{r}
+df_stats %>%
+  ggplot(aes(x = log10(mean),
+           y = log10(CV))) +
+  geom_point() +
+  geom_abline(slope = coef(reg_model)[["log10(mean)"]], 
+              intercept = coef(reg_model)[["(Intercept)"]],
+              color = "red",
+              linewidth = 1) +
+  ggtitle("log of x and y, mean > 0.01, include regression line") 
+
+```
+
+Calculate the residuals and add them to the stats dataframe. Then adjust the residuals by dividing them by the mean. 
+At first we also thought about calculating the absolute values for the residuals and the adjusted residuals by squaring them. But the direction of the residuals tells us if a gene has higher or lower variance compared to regression line, so it contains valuable information. So we decided to only adjust the residuals by dividing with the mean, and not squaring them.
+
+```{r}
+residuals <- data.frame(genes = names(reg_model$residuals), 
+                        residuals = reg_model$residuals)
+
+df_stats <- merge(df_stats, residuals, by = "genes") %>%
+    arrange(desc(residuals)) #sort by residuals
+
+df_stats$adj_res <- df_stats$residuals/df_stats$mean 
+
+rm("residuals")
+
+```
+
+
+## Distribution of non adjusted residuals
+
+```{r, fig.show='hold', out.width='50%' }
+df_stats %>%
+  ggplot(aes(x = log10(mean), y = residuals)) + 
+  geom_point() +
+  ggtitle("Residuals vs log10 (mean)")
+
+df_stats %>%
+  ggplot(aes(x = residuals)) +
+  geom_histogram(color = "grey",
+                 fill = "grey") +
+  xlim(-0.1,0.1) +
+  ylab("frequency") +
+  ggtitle("Distribution of residuals") +
+  theme_classic()
+
+```
+
+## Distribution of mean-adjusted residuals
+
+```{r, fig.show='hold', out.width='50%' }
+df_stats %>%
+  ggplot(aes(x = log10(mean), y = adj_res)) + 
+  geom_point() +
+    ylim(0,100) +
+  ggtitle("Mean-adjusted residuals vs log10 (mean)")
+
+df_stats %>%
+  ggplot(aes(x = adj_res)) +
+  geom_histogram(color = "grey",
+                 fill = "grey") +
+  xlim(-0.25,0.25) +
+  ylab("frequency") +
+  ggtitle("Distribution of mean-adjusted residuals") +
+  theme_classic()
+
+```
+
+# Check gene function
+
+## Append gene function and common gene name
+
+Download the *S. cerevisiae* dataset from Ensembl and retain gene name, gene description, and gene sets.  
+
+```{r}
+ensembl <- useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+                   dataset = "scerevisiae_gene_ensembl",
+                   host = "https://Jul2018.archive.ensembl.org") 
+
+gen_des <- getBM(attributes = c("ensembl_gene_id",
+                                "description",
+                                "external_gene_name",
+                                "name_1006"),
+                 mart = ensembl)
+
+colnames(gen_des) <- c("genes", 
+                       "description",
+                       "common_name",
+                       "gene_Set")
+
+rm("ensembl")
+
+```
+
+Before merging the two dataframes, check if all the genes in our dataset have annotations. These genes will be lost in the next merginst step since they have no annotations. 
+
+```{r}
+setdiff(df_stats$Genes, gen_des$Genes)
+
+```
+
+Merge the stats dataframe with the common gene name and the gene info
+
+```{r}
+#merge
+df_stats <- merge(df_stats, 
+                  gen_des[1:3],
+                  by = "genes") %>%
+  distinct() %>% #only keep unique rows
+  arrange(desc(adj_res)) %>%
+  relocate(common_name, .after = genes)
+
+write.csv2(df_stats, 
+           "../results/Gene_Variance/gene_statistics_and_description.csv")
+rm(list = c("gen_des", "tmp"))
+
+```
+
+## Check gene count distribution of the top genes
+
+Plot the gene count distribution.
+
+```{r, fig.show='hold', out.width='50%'}
+subset(df_norm, select = (df_stats$genes)[1:10]) %>%
+  rownames_to_column("cell") %>%
+  melt(id = "cell") %>%
+  ggplot(aes(x = variable, y = value)) +
+  geom_violin() +
+  ggtitle("Distribution of gene counts, linear y scale") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+
+subset(df_norm, select= (df_stats$genes)[1:10]) %>%
+  rownames_to_column("cell") %>%
+  melt(id = "cell") %>%
+  ggplot(aes(x = variable, y = value)) +
+  scale_y_continuous(trans = "log10") +
+  geom_violin() +
+  ggtitle("Distribution of gene counts, log10 y scale") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+
+```
+
+## Remove cell cycle related genes
+
+During a meeting with David and Chris, we went through the genes with high variance and noticed that most of them are involved in the cell cycle, which is not too surprising considered how cells were samples. 
+Here I will filter out from the dataframe the genes that are involved in the cell cycle. 
+
+```{r}
+df_no_cell_cycle <- df_stats[!grepl("cell cycle", df_stats$description),]
+
+write.csv2(df_no_cell_cycle, 
+           "../results/Gene_Variance/no_cell_cycle_genes.csv")
+
+```
+
+
+# Gene set enrichment analysis
+
+Perform a gene set enrichment analysis, ranking on the residuals, either non mean adjusted or mean adjusted. 
+
+## GSA on non adjusted residuals
+
+```{r }
+gse_res <- list()
+
+original_gene_list <- df_stats$residuals #rank on residuals
+names(original_gene_list) <- df_stats$genes # name the vector
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list <- na.omit(original_gene_list) # omit any NA values 
+gene_list = sort(gene_list, decreasing = TRUE)
+
+#Run GSEA
+gse_res$gse_non_ajd <- 
+  gseGO(geneList = gene_list, 
+        ont ="ALL", 
+        keyType = "ENSEMBL", 
+        nPerm = 10000, 
+        minGSSize = 5, 
+        maxGSSize = 500, 
+        pvalueCutoff = 0.05,
+        verbose = FALSE, 
+        OrgDb = org.Sc.sgd.db, 
+        pAdjustMethod = "none")
+
+```
+
+## GSA on adjusted residuals 
+
+```{r }
+original_gene_list <- df_stats$adj_res #rank on residuals
+names(original_gene_list) <- df_stats$genes # name the vector
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list<-na.omit(original_gene_list) # omit any NA values 
+gene_list = sort(gene_list, decreasing = TRUE)
+
+# Run GSEA
+gse_res$gse_adj <- 
+  gseGO(geneList = gene_list, 
+        ont ="ALL", 
+        keyType = "ENSEMBL", 
+        nPerm = 10000, 
+        minGSSize = 5, 
+        maxGSSize = 500, 
+        pvalueCutoff = 0.05, 
+        verbose = FALSE, 
+        OrgDb = org.Sc.sgd.db, 
+        pAdjustMethod = "none")
+
+```
+
+## GSA after removing cell-cycle genes
+
+```{r, fig.width=8, fig.height=12}
+original_gene_list <- df_no_cell_cycle$adj_res #rank on residuals
+names(original_gene_list) <- df_no_cell_cycle$genes # name the vector
+
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list<-na.omit(original_gene_list) # omit any NA values 
+gene_list = sort(gene_list, decreasing = TRUE)
+
+# Run GSEA
+gse_res$gse_no_cell_cycle <- 
+  gseGO(geneList = gene_list, 
+        ont ="ALL", 
+        keyType = "ENSEMBL", 
+        nPerm = 10000, 
+        minGSSize = 5, 
+        maxGSSize = 500, 
+        pvalueCutoff = 0.05, 
+        verbose = FALSE, 
+        OrgDb = org.Sc.sgd.db, 
+        pAdjustMethod = "none")
+
+```
+
+## Plot results
+
+```{r, fig.width=8, fig.height=12}
+
+dotplot(gse_res$gse_adj, 
+        showCategory=10, 
+        split=".sign", 
+        title = "Non adjusted residuals") + 
+  facet_grid(.~.sign) 
+
+dotplot(gse_res$gse_non_ajd, 
+        showCategory=10, 
+        split=".sign",
+        title = "Adjusted residuals") +
+  facet_grid(.~.sign)
+
+dotplot(gse_res$gse_no_cell_cycle, 
+        showCategory=10, 
+        split=".sign",
+        title = "No cell cycle genes") + 
+  facet_grid(.~.sign)
+
+```
+
+# Conclusions
+
+Most of the genes that are characterized by high variability are involved in the cell cycle. There are genes that are not cell cycle related: we want to check if they correlate with cell cycle phases or not. 
+I will assign a time and/or cell cycle phase to the cells, and see the variability withing groups and between clusters. 

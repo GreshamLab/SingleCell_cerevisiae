@@ -1,0 +1,116 @@
+---
+title: "Cluster Cells"
+author: "Simone Zaghen"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    toc: true
+    number_section: true
+    toc_float: 
+      collapsed: false
+      smooth_scroll: true
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/Cluster_Cells/") })
+
+---
+
+# Load packages
+
+```{r, results='hide', message=FALSE}
+library(tidyverse)
+library(conflicted)
+library(umap)
+library(RColorBrewer)
+
+#Solve conflicts
+conflict_prefer("select", "dplyr", quiet = T)
+conflict_prefer("mutate", "dplyr", quiet = T)
+conflict_prefer("summarize", "dplyr", quiet = T)
+conflict_prefer("filter", "dplyr", quiet = T)
+
+#create folders
+if (!dir.exists("../results/Cluster_Cells")){dir.create("../results/Cluster_Cells/")}
+
+```
+
+# Load data and metadata
+
+```{r, message = F}
+rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
+metadata <- read_tsv("../data/Cell_Cycle_Metadata.tsv.gz") #cell cycle data
+
+rawdata <- cbind(rawdata, metadata)
+
+# Filter for the wt strain in the first two timepoints of the experiment
+df <- rawdata %>%
+  filter(Pool %in% c("2","8")) %>% #timepoints before rapamycin treatment
+  filter(Gene %in% "WT") %>% #only wt strain
+  filter(rowSums(.[1:5843]) < 16000) %>% #remove counts above 16000
+  filter(rowSums(.[1:5843]) > 0.1) %>% #remove counts above 16000
+  mutate_if(is.character, as.factor) %>% #convert to factor
+  drop_na()
+
+df[1:5843] <- df[1:5843]*10000/rowSums(df[1:5843]) #normalize
+
+rm("metadata")
+
+```
+
+# Principal component analysis
+
+
+
+# UMAP 
+
+not standarized
+
+```{r}
+dat <- df[1:5843]
+lab <- df[5844:5849]
+
+umap <- umap(dat)
+head(umap$layout)
+
+toplot <- cbind(data.frame(umap$layout), lab)
+
+toplot %>%
+  ggplot(aes(x = X1,
+             y = X2,
+         color = Cell_Cycle_Phase)) +
+  geom_point() +
+  scale_colour_manual(values= c("#999999", "#E69F00", "#56B4E9", "#009E73",
+          "#F0E442"))
+```
+
+This looks awful - i should scale the data before doing this? Trying now with seurat appraoch to see what comes out
+
+```{r}
+dat2 <- df[1:5843] %>%
+  mutate_all(~(scale(.) %>% as.vector))
+
+lab <- df[5844:5849]
+
+umap2 <- umap(dat2)
+head(umap2$layout)
+
+toplot <- cbind(data.frame(umap2$layout), lab)
+
+toplot %>%
+  ggplot(aes(x = X1,
+             y = X2,
+         color = Cell_Cycle_Phase)) +
+  geom_point() +
+  scale_colour_manual(values= c("#999999", "#E69F00", "#56B4E9", "#009E73",
+          "#F0E442"))
+```
+
+
+
+
+
+
+
+
+
+
+

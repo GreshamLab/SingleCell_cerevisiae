@@ -1,0 +1,144 @@
+---
+title: "Seurat"
+output: html_document
+date: "2023-10-23"
+---
+
+# Load packages
+
+```{r, results='hide', message=FALSE}
+#Install and load packages from bioconductor
+if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+if (!require("biomaRt", quietly = TRUE)) install("biomaRt"); library(biomaRt)
+
+#Install and load packages from CRAN
+if (!require('tidyverse')) install.packages('tidyverse'); library('tidyverse')
+if (!require('reshape2')) install.packages('reshape2'); library('reshape2')
+if (!require('Seurat')) install.packages('Seurat'); library('Seurat')
+
+
+library(conflicted)
+
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
+
+```
+
+# Load dataset and filter data 
+
+Here I'm loading the dataset from [this paper](https://doi.org/10.1101/2023.09.21.558277).
+
+The dataset can be downloaded from [supplementary data 1](https://zenodo.org/records/8371195).
+
+The dataset "is single-cell response to rapamycin count data deposited in GEO with accession GSE242556. It is a 173348 rows × 5847 columns TSV.GZ file where the first row is a header, the first 5843 columns are integer gene counts, and the final 4 columns ('Gene', 'Replicate', 'Pool', and 'Experiment') are cell-specific metadata."
+
+```{r}
+rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
+metadata <- read_tsv("../data/Cell_Cycle_Metadata.tsv.gz") #cell cycle data
+
+rawdata <- cbind(rawdata, metadata)
+
+df <- rawdata %>%
+  filter(Pool %in% c("2", "8")) %>% #timepoints before rapamycin treatment
+  filter(Gene %in% "WT") %>% #only wt strain
+  select(1:5843) %>% #exclude the metadata
+  drop_na()
+df <- as.data.frame(t(df)) #Seurat: rows as genes, columns as cell. Transpose
+colnames(df) <- str_remove(colnames(df), "V") #fix colnames removing the V
+
+meta <- rawdata[5844:5847] #retain metadata
+
+```
+
+Create the Seurat object and add the metadata to it
+
+```{r}
+#Only load things after filtering so it's faster
+srat <- CreateSeuratObject(df, project = "cerevisiae") 
+srat <- AddMetaData(srat, meta)
+
+```
+
+```{r}
+VlnPlot(srat, 
+        features = c("nFeature_RNA","nCount_RNA"),
+        ncol = 2, 
+        pt.size = 0,
+        group.by = "Pool") & 
+  theme(plot.title = element_text(size=10))
+
+#nFeature_RNA: number of expressed (detected) genes per same cell
+#nCount_RNA: number of UMI reads detected per cell
+
+```
+
+```{r}
+FeatureScatter(srat, 
+               feature1 = "nCount_RNA", 
+               feature2 = "nFeature_RNA",
+               group.by = "Pool")
+
+```
+
+```{r}
+srat <- NormalizeData(srat)
+
+```
+
+
+```{r}
+srat <- FindVariableFeatures(srat, selection.method = "vst")
+
+top10 <- head(VariableFeatures(srat), 10)
+top10 
+
+
+plot1 <- VariableFeaturePlot(srat)
+LabelPoints(plot = plot1, points = top10, repel = TRUE, xnudge = 0, ynudge = 0)
+
+
+```
+
+
+```{r}
+all.genes <- rownames(srat)
+srat <- ScaleData(srat, features = all.genes)
+
+```
+
+```{r}
+srat <- RunPCA(srat, features = VariableFeatures(object = srat))
+print(srat[["pca"]], dims = 1:5, nfeatures = 5)
+VizDimLoadings(srat, dims = 1:2, reduction = "pca")
+DimPlot(srat, reduction = "pca") + NoLegend()
+DimHeatmap(srat, dims = 1, cells = 500, balanced = TRUE)
+DimHeatmap(srat, dims = 1:15, cells = 500, balanced = TRUE)
+
+```
+
+```{r}
+ElbowPlot(srat)
+
+```
+
+```{r}
+srat <- FindNeighbors(srat, dims = 1:10)
+srat <- FindClusters(srat, resolution = 0.5)
+head(Idents(srat), 5)
+
+```
+
+```{r}
+srat <- RunUMAP(srat, dims = 1:10)
+DimPlot(srat, reduction = "umap")
+
+```
+
+
+```{r}
+
+```
+
+
+
+

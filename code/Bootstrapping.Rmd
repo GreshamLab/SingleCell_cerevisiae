@@ -1,0 +1,222 @@
+---
+title: "Bootstrapping"
+author: "Simone Zaghen"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    toc: true
+    number_section: true
+    toc_float: 
+      collapsed: false
+      smooth_scroll: true
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/Bootstrapping/") })
+---
+
+The idea is to assign time and cell cycle to cells and then look at the variance of the genes in the same cell cycle/timeframe window. To do this without losing statistical power/accuracy, we need to check how many cells we need in each timeframe/cycle phase. To do this, we bootstrap the dataset and check which residuals we have with a specific number of cells, to see whenever we get close to the residuals previously calculated. This will tell us how big the subset of cells needs to be not to lose statistical significance. 
+
+# Load packages
+
+```{r, results='hide', message=FALSE}
+library(tidyverse)
+library(conflicted)
+
+#Solve conflicts
+conflict_prefer("select", "dplyr", quiet = T)
+conflict_prefer("mutate", "dplyr", quiet = T)
+conflict_prefer("summarize", "dplyr", quiet = T)
+conflict_prefer("filter", "dplyr", quiet = T)
+
+#create folders
+if (!dir.exists("../results/Bootstrapping")){dir.create("../results/Bootstrapping/")}
+
+```
+
+
+# Load data and filter
+
+Load the gene count matrix and load the metadata in which Chris estimated the cell cycle phase and assigned a pseudotime to the cells. 
+
+```{r, message = F}
+rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
+metadata <- read_tsv("../data/Cell_Cycle_Metadata.tsv.gz") #cell cycle data
+df_stats <- read.csv2("../results/Gene_Variance/gene_statistics_and_description.csv", row.names = 1)
+
+rawdata <- cbind(rawdata, metadata)
+rm("metadata")
+
+```
+
+Only filter for the WT strain and look at the first two timepoints, which correspond to continuously sampled cells before rapamycin treatment (see pre-print for details).
+
+```{r, message = F}
+# Filter for the wt strain in the first two timepoints of the experiment
+df <- rawdata %>%
+  filter(Pool %in% c("1","2")) %>% #timepoints before rapamycin treatment
+  filter(Gene %in% "WT") %>% #only wt strain
+  filter(rowSums(.[1:5843]) < 16000) %>% #remove counts above 16000
+  mutate_if(is.character, as.factor) %>% #convert to factor
+  drop_na()
+
+df[1:5843] <- df[1:5843]*10000/rowSums(df[1:5843]) #normalize
+
+```
+
+# Count cells in each cell cycle phase and in each timepoint
+
+Count cells in each cell cycle phase and in each timepoint. Based on this, we will decide the sizes of the resampling when bootstrapping
+
+```{r}
+barplot(table(df$Cell_Cycle_Phase))
+
+hist(df$Cell_Cycle_Time, 
+     breaks = 44,
+     main = "Each bin is 2 minutes of pseudotime",
+     xlab = "Pseudotime")
+
+hist(df$Cell_Cycle_Time, 
+     breaks = 30,
+     main = "Each bin is 3 minutes of pseudotime",
+     xlab = "Pseudotime")
+
+```
+
+The lowest amount of cells in a bin is 500, so I will start the bootstrap procedure from 250, out of curiosity, and then increase it.
+
+# Bootstrap
+
+Perform bootstrap and save the regression lines and the residuals of each iteration
+
+```{r}
+reg_lines <- data.frame() #create df to store regression lines
+residuals <- data.frame() #create df to store residuals
+
+sample_size = c(250, 500, 1000, 1500, 2000, 6000) #how many cells to sample
+
+nperm <- 500 #set how many times to re-sample
+
+for (j in 1:length(sample_size)) { #iterates for all the sample sizes i want
+  for (i in 1:nperm) { #repeats the sampling X times
+    sub_df <- df[sample(nrow(df), sample_size[j]),] #subset/sample the df
+    
+    #calculate stats
+    mean = apply(sub_df[1:5843], 2, mean, na.rm = T) #average exp of each gene
+    sd = apply(sub_df[1:5843], 2, sd) #average sd of each gene
+    CV = sd/mean #calculate coefficient of variation
+    stats <- rbind(mean, CV) #merge stats in one df
+    stats <- as.data.frame(t(stats)) #transpose
+    stats <- filter(stats, mean > 0.01) #remove genes with low mean
+
+    #model
+    model <- lm(log10(CV) ~ log10(mean), data = stats)
+    
+    #save intercept and slope into df
+    coef <- data.frame(t(coef(model)))
+    coef$sample_size <- sample_size[j]
+    reg_lines <- rbind(reg_lines, coef)
+    
+    #save residuals in df
+    tmp_residuals <- data.frame(genes = names(model$residuals), 
+                                residuals = model$residuals,
+                                sample_size = sample_size[j],
+                                row.names = NULL)
+    residuals <- rbind(residuals, tmp_residuals)
+    }
+}
+
+rm(list = c("coef", "model", "stats", "sub_df", "CV",
+            "i", "j", "mean", "nperm", "sample_size",
+            "sd", "tmp_residuals")) #clean workspace
+
+```
+
+Append data from original model 
+
+```{r}
+#Append results from model with all cells
+reg_lines <- rbind(reg_lines, c(0.2842771, -0.4808712, 45237))
+colnames(reg_lines) <- c("intercept", "slope", "sample_size")
+
+#append residuals of model with all cells
+tmp <- select(df_stats, c("genes", "residuals")) %>%
+  mutate(sample_size = 45237)
+residuals <- rbind(residuals, tmp)
+
+rm("tmp")
+
+```
+
+# Plot regression lines
+
+```{r}
+ggplot() +
+  geom_point(data = df_stats,
+             aes(x = log10(mean),
+                 y = log10(CV)),
+             color = "grey") +
+  geom_abline(data = reg_lines,
+              aes(slope = slope,
+                  intercept = intercept,
+                  color = as.factor(sample_size))) +
+  labs(color="re-sampling size")
+
+ggplot() +
+  geom_point(data = df_stats,
+             aes(x = log10(mean),
+                 y = log10(CV)),
+             color = "grey") +
+  geom_abline(data = reg_lines,
+              aes(slope = slope,
+                  intercept = intercept,
+                  color = as.factor(sample_size))) +
+  labs(color="re-sampling size") +
+  theme(legend.position = "none") +
+  facet_wrap(~sample_size, ncol = 2)
+
+```
+
+Plot distribution of slopes and intercepts
+
+```{r}
+reg_lines %>%
+  filter(sample_size != 45237) %>%
+ggplot(aes(x=slope)) + 
+  geom_density() +
+  ggtitle("Distribution of slope values") +
+  facet_wrap(~sample_size)
+  
+reg_lines %>%
+  filter(sample_size != 45237) %>%
+ggplot(aes(x = intercept)) + 
+  geom_density() +
+  ggtitle("Distribution of intercept values") +
+  facet_wrap( ~ sample_size)
+
+
+```
+
+# Calculate Spearman's rank correlation coefficient
+
+For each re-sampling size, calculate the average residual of each gene. Then pivot the df in the wide form since the cor function takes wide df as input.
+
+```{r, message=F}
+mean_res <- residuals %>%
+  group_by(sample_size, genes) %>%
+  summarize(mean = mean(residuals, na.rm = T)) %>%
+  pivot_wider(names_from = sample_size, 
+              values_from = mean) %>%
+  drop_na() %>% #remove rows in which there are NA. 
+  column_to_rownames(var = "genes") 
+
+```
+
+Calculate the Spearman's coefficient on this
+
+```{r}
+spearman_coeff <- cor(mean_res, method = "spearman" )
+write.csv2(spearman_coeff, "../results/Bootstrapping/spearman_coeff.csv")
+
+spearman_coeff
+
+```
+
