@@ -43,16 +43,19 @@ rawdata <- cbind(rawdata, metadata)
 
 # Filter for the wt strain in the first two timepoints of the experiment
 df <- rawdata %>%
-  filter(Pool %in% c("2","8")) %>% #timepoints before rapamycin treatment
+  filter(Pool %in% c("1","2")) %>% #timepoints before rapamycin treatment
   filter(Gene %in% "WT") %>% #only wt strain
-  filter(rowSums(.[1:5843]) < 16000) %>% #remove counts above 16000
-  filter(rowSums(.[1:5843]) > 0.1) %>% #remove counts above 16000
+  filter(rowSums(.[1:5843]) < 15000) %>% #remove counts above 15000
   mutate_if(is.character, as.factor) %>% #convert to factor
   drop_na()
 
 df[1:5843] <- df[1:5843]*10000/rowSums(df[1:5843]) #normalize
 
-rm("metadata")
+df2 <- df %>%
+  select_if(~mean(., na.rm = TRUE) <= 0.1)
+
+
+#rm("metadata")
 
 ```
 

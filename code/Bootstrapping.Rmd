@@ -67,7 +67,12 @@ df[1:5843] <- df[1:5843]*10000/rowSums(df[1:5843]) #normalize
 Count cells in each cell cycle phase and in each timepoint. Based on this, we will decide the sizes of the resampling when bootstrapping
 
 ```{r}
-barplot(table(df$Cell_Cycle_Phase))
+barplot(table(df$Cell_Cycle_Phase),
+        main = "Cells in each cell cycle phase")
+
+```
+
+```{r, fig.show='hold', out.width='50%' }
 
 hist(df$Cell_Cycle_Time, 
      breaks = 44,
@@ -177,7 +182,7 @@ ggplot() +
 
 Plot distribution of slopes and intercepts
 
-```{r}
+```{r, fig.show='hold'}
 reg_lines %>%
   filter(sample_size != 45237) %>%
 ggplot(aes(x=slope)) + 
