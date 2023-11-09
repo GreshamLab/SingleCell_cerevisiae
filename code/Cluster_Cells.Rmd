@@ -1,5 +1,5 @@
 ---
-title: "Cluster Cells"
+title: "Cluster_Cells"
 author: "Simone Zaghen"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
@@ -10,110 +10,186 @@ output:
       collapsed: false
       smooth_scroll: true
 knit: (function(inputFile, encoding) {
-  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/Cluster_Cells/") })
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/Cluster_Cells") })
 
 ---
 
 # Load packages
 
 ```{r, results='hide', message=FALSE}
-library(tidyverse)
-library(conflicted)
-library(umap)
-library(RColorBrewer)
+#Load packages from CRAN
+library("tidyverse")
+library("reshape2")
+library("Seurat")
+library("conflicted")
 
 #Solve conflicts
-conflict_prefer("select", "dplyr", quiet = T)
-conflict_prefer("mutate", "dplyr", quiet = T)
-conflict_prefer("summarize", "dplyr", quiet = T)
-conflict_prefer("filter", "dplyr", quiet = T)
-
-#create folders
-if (!dir.exists("../results/Cluster_Cells")){dir.create("../results/Cluster_Cells/")}
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
 
 ```
 
-# Load data and metadata
+# Load dataset and filter data 
 
-```{r, message = F}
+```{r, results='hide', message=FALSE}
 rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
 metadata <- read_tsv("../data/Cell_Cycle_Metadata.tsv.gz") #cell cycle data
 
-rawdata <- cbind(rawdata, metadata)
+```
 
-# Filter for the wt strain in the first two timepoints of the experiment
-df <- rawdata %>%
-  filter(Pool %in% c("1","2")) %>% #timepoints before rapamycin treatment
+Do some data wrangling
+
+```{r}
+df <- cbind(rawdata, metadata) #merge data and metadata
+
+df <- df %>%
+  filter(Pool %in% c("1", "2")) %>% #timepoints before rapamycin treatment
   filter(Gene %in% "WT") %>% #only wt strain
-  filter(rowSums(.[1:5843]) < 15000) %>% #remove counts above 15000
-  mutate_if(is.character, as.factor) %>% #convert to factor
   drop_na()
 
-df[1:5843] <- df[1:5843]*10000/rowSums(df[1:5843]) #normalize
-
-df2 <- df %>%
-  select_if(~mean(., na.rm = TRUE) <= 0.1)
-
-
-#rm("metadata")
-
 ```
 
-# Principal component analysis
-
-
-
-# UMAP 
-
-not standarized
+Prepare the inputs for seurat 
 
 ```{r}
-dat <- df[1:5843]
-lab <- df[5844:5849]
+counts <- select(df, 1:5843) #exclude the metadata
+counts <- as.data.frame(t(counts)) #Seurat: rows as genes, columns as cell
+colnames(counts) <- str_remove(colnames(counts), "V") #fix colnames
 
-umap <- umap(dat)
-head(umap$layout)
+meta <- select(df, 5844:5849) #retain metadata 
 
-toplot <- cbind(data.frame(umap$layout), lab)
-
-toplot %>%
-  ggplot(aes(x = X1,
-             y = X2,
-         color = Cell_Cycle_Phase)) +
-  geom_point() +
-  scale_colour_manual(values= c("#999999", "#E69F00", "#56B4E9", "#009E73",
-          "#F0E442"))
 ```
 
-This looks awful - i should scale the data before doing this? Trying now with seurat appraoch to see what comes out
+Create seurat object
 
 ```{r}
-dat2 <- df[1:5843] %>%
-  mutate_all(~(scale(.) %>% as.vector))
+#Only load things after filtering so it's faster
+srat <- CreateSeuratObject(counts, 
+                           project = "cerevisiae",
+                           min.cells = 5,
+                           min.features = 300)
+srat <- AddMetaData(srat, meta)
 
-lab <- df[5844:5849]
+rm(list = c("counts", "meta", "metadata"))
 
-umap2 <- umap(dat2)
-head(umap2$layout)
-
-toplot <- cbind(data.frame(umap2$layout), lab)
-
-toplot %>%
-  ggplot(aes(x = X1,
-             y = X2,
-         color = Cell_Cycle_Phase)) +
-  geom_point() +
-  scale_colour_manual(values= c("#999999", "#E69F00", "#56B4E9", "#009E73",
-          "#F0E442"))
 ```
 
+# Normalize and scale data
 
+Remove cells with very low or suspiciously high nCount_RNA (number of UMI reads detected per cell).
 
+```{r}
+srat <- subset(srat, subset = nFeature_RNA > 200 & nFeature_RNA < 2400)
 
+```
 
+Normalize data using the relative count (RC) method since it is similar to the normalization method used in previous scripts. (Normalizing with the RC method: "counts for each cell are divided by the total counts for that cell and multiplied by the scale.factor")
 
+```{r}
+srat <- NormalizeData(srat, 
+                      normalization.method = "RC",
+                      scale.factor = 10000,
+                      verbose = F)
+```
 
+Find the most variable genes (required for pca). 
 
+Using the method "vst" since it is a method similar to the previouis step in which I checked the coefficient of variation for each gene in the dataset. 
+vst method: "first, fits a line to the relationship of log(variance) and log(mean) using local polynomial regression (loess). Then standardizes the feature values using the observed mean and expected variance (given by the fitted line). Feature variance is then calculated on the standardized values after clipping to a maximum (see clip.max parameter)."
 
+```{r}
+srat <- FindVariableFeatures(srat, 
+                             selection.method = "vst", 
+                             nfeatures = 3000,
+                             verbose = F)
 
+```
 
+Scale data so that average for all of them is 0. 
+
+```{r}
+all.genes <- rownames(srat)
+srat <- ScaleData(srat, 
+                  features = all.genes, 
+                  verbose = F)
+
+```
+
+Create discrete time intervals that can be used to color clusters of cells
+
+```{r}
+srat@meta.data <- srat@meta.data %>%
+  mutate(max = max(Cell_Cycle_Time), 
+         min = min(Cell_Cycle_Time), 
+         width = (max-min)/30, 
+         bin1 = ceiling((Cell_Cycle_Time-min)/width),
+         time_interval = ifelse(Cell_Cycle_Time==min, bin1 + 1, bin1)) %>%
+  select(-c("max", "min", "width", "bin1"))
+
+```
+
+# PCA
+
+```{r}
+srat <- RunPCA(srat, 
+               features = VariableFeatures(object = srat),
+               verbose = F)
+
+```
+Elbow plot for ranking of principle components based on the percentage of variance explained by each one. 
+
+```{r}
+ElbowPlot(srat, ndims = 30)
+
+```
+The first 7 PCs explain most of the variation in the data, therefore I will include only those in the next steps. 
+
+```{r, fig.width=6, fig.height=16}
+VizDimLoadings(srat, dims = 1:7, reduction = "pca")
+
+```
+
+```{r, }
+DimHeatmap(srat, dims = 1, cells = 500, balanced = TRUE)
+DimHeatmap(srat, dims = 1:7, cells = 500, balanced = TRUE)
+
+```
+
+PCA plot, faceted by metadata infos
+
+```{r, fig.show='hold'}
+DimPlot(srat, reduction = "pca", group.by = "Replicate")
+DimPlot(srat, reduction = "pca", group.by = "Pool")
+DimPlot(srat, reduction = "pca", group.by = "Experiment")
+DimPlot(srat, reduction = "pca", group.by = "Cell_Cycle_Phase")
+DimPlot(srat, reduction = "pca", group.by = "time_interval")
+
+```
+
+# UMAP
+I will use the first 7 dims (from the elbow plot we can see that after the 7th dimension the PCs do not explain variation anymore)
+
+```{r}
+srat <- FindNeighbors(srat, dims = 1:7)
+srat <- FindClusters(srat, resolution = 0.5)
+
+```
+
+```{r}
+srat <- RunUMAP(srat, dims = 1:7)
+DimPlot(srat, reduction = "umap")
+
+```
+
+```{r}
+DimPlot(srat, reduction = "umap", group.by = "Replicate")
+DimPlot(srat, reduction = "umap", group.by = "Pool")
+DimPlot(srat, reduction = "umap", group.by = "Experiment")
+DimPlot(srat, reduction = "umap", group.by = "Cell_Cycle_Phase")
+DimPlot(srat, reduction = "umap", group.by = "time_interval")
+
+```
+
+# Conclusions
+
+Both the PCA and the UMAP show that cells cluster well based on cell cycle phase and time. In this script I calculated timeframes of 3 minutes each, and assigned a timeframe to each cell. After checking that clustering cells in 3 minutes timeframes is fine, I can do intra-cluster analysis to check which genes are driving cell variability in each cluster. 
