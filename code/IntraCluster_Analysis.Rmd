@@ -1,0 +1,84 @@
+---
+title: "Intra-cluster variance analysis"
+author: "Simone Zaghen"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    toc: true
+    number_section: true
+    toc_float: 
+      collapsed: false
+      smooth_scroll: true
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/") })
+
+---
+
+# Load packages
+
+```{r, results='hide', message=FALSE}
+#Load packages from CRAN
+library("tidyverse")
+library("reshape2")
+library("conflicted")
+
+#Solve conflicts
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
+
+```
+
+# Load dataset and filter data 
+
+```{r, results='hide', message=FALSE}
+rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
+metadata <- read_tsv("../data/Cell_Cycle_Metadata.tsv.gz") #cell cycle data
+
+```
+
+Do some data wrangling and divide cells into 3 minutes bins.
+
+```{r}
+df <- cbind(rawdata, metadata) #merge data and metadata
+
+df <- df %>%
+  filter(Pool %in% c("1", "2")) %>% #timepoints before rapamycin treatment
+  filter(Gene %in% "WT") %>% #only wt strain
+  drop_na() %>%
+  mutate(max = max(Cell_Cycle_Time), 
+         min = min(Cell_Cycle_Time), 
+         width = (max-min)/30, 
+         bin1 = ceiling((Cell_Cycle_Time-min)/width),
+         time_interval = ifelse(Cell_Cycle_Time==min, bin1 + 1, bin1)) %>%
+  select(-c("max", "min", "width", "bin1"))
+df$time_interval <- as.factor(df$time_interval)
+
+```
+
+# Perform analysis
+
+For each bin, calculate coefficient of variation and build a linear model of coefficient of variation vs mean.
+
+```{r}
+
+for (i in 1:length(levels(df$time_interval))) {
+  
+  tmp <- df %>%
+    filter(time_interval %in% levels(df$time_interval)[i]) %>%
+    select(-c("Gene", "Replicate", "Pool", "Experiment", "Cell_Cycle_Phase",
+              "Cell_Cycle_Time", "time_interval")) %>%
+    
+    #normalize
+    #filter for reads above threshold
+    #reveme reads with very high counts
+    #group by gene and calculate mean sd and coeff of variance
+    
+  
+}
+
+```
+
+
+Workflow:
+
+load data and metadata, do the filtering, then use code from Cluster_Cells to divide the cells in bins of 3 mins approx. do not forget to normalize as well. Then on that, for each bin, calcuate regression model and estimate residuals, adjust them on mean (if it s the same i did before on the Gene_Variance script). Then can calcukate the top 100 genes for ex and see how they change among different times. 

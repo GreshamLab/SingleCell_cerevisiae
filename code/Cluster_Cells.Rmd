@@ -181,7 +181,7 @@ DimPlot(srat, reduction = "umap")
 
 ```
 
-```{r}
+```{r, fig.show='hold'}
 DimPlot(srat, reduction = "umap", group.by = "Replicate")
 DimPlot(srat, reduction = "umap", group.by = "Pool")
 DimPlot(srat, reduction = "umap", group.by = "Experiment")
