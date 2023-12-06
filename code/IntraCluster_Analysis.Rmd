@@ -22,9 +22,6 @@ library("tidyverse")
 library("reshape2")
 library("ggpubr")
 library("biomaRt")
-library("enrichplot")
-library("org.Sc.sgd.db")
-library("clusterProfiler")
 
 library("conflicted")
 
@@ -47,14 +44,12 @@ ensembl <- useMart(biomart = "ENSEMBL_MART_ENSEMBL",
 
 gen_des <- getBM(attributes = c("ensembl_gene_id",
                                 "description",
-                                "external_gene_name",
-                                "name_1006"),
+                                "external_gene_name"),
                  mart = ensembl)
 
 colnames(gen_des) <- c("genes", 
                        "description",
-                       "common_name",
-                       "gene_Set")
+                       "common_name")
 
 rm("ensembl")
 
@@ -63,26 +58,38 @@ rm("ensembl")
 Do some data wrangling and divide cells into 3 minutes bins.
 
 ```{r}
-df <- cbind(rawdata, metadata) #merge data and metadata
-
-df <- df %>%
+df <- cbind(rawdata, metadata) %>% #merge data and metadata
   filter(Pool %in% c("1", "2")) %>% #timepoints before rapamycin treatment
   filter(Gene %in% "WT") %>% #only wt strain
-  drop_na() %>%
-  mutate(max = max(Cell_Cycle_Time), 
-         min = min(Cell_Cycle_Time), 
-         width = (max-min)/30, 
-         bin1 = ceiling((Cell_Cycle_Time-min)/width),
-         time_interval = ifelse(Cell_Cycle_Time==min, bin1 + 1, bin1)) %>%
-  mutate(time_interval = time_interval*3) %>% #each bin should reflect minutes
-  select(-c("max", "min", "width", "bin1"))
-df$time_interval <- as.factor(df$time_interval)
+  drop_na() %>% #remove empty levels
+  mutate(max = max(Cell_Cycle_Time),
+         min = min(Cell_Cycle_Time),
+         width = (max-min)/30,
+         bin1 = ceiling((Cell_Cycle_Time - min)/width),
+         time_interval = ifelse(Cell_Cycle_Time == min, 
+                                bin1 + 1, 
+                                bin1)) %>%
+  mutate(time_interval = time_interval * 3) %>% #each bin should reflect minutes
+  select(-c("max", "min", "width", "bin1")) %>%
+  mutate(time_interval = factor(time_interval))
+
+```
+
+Check how many cells/bin we have
+
+```{r}
+df %>%
+  count(time_interval) %>% 
+  ggplot(aes(x = time_interval,
+                   y = n)) +
+  geom_bar(stat = "identity") +
+  ylab("#cells")
 
 ```
 
 # Perform intra-cluster analysis
 
-For each bin, calculate coefficient of variation and build a linear model of coefficient of variation vs mean. Then plot the model line, calculate the residuals, and adjsut them based on the mean. All the intermediate results are saved in a list and accessible for performing further analysis.  
+For each bin, normalize and remove high and low counts. Then calculate mean, sd, and coefficient of variation and build a linear model (coefficient of variation vs mean). Then calculate the residuals, and adjust them based on the mean. 
 
 ```{r}
 #define lists to store output
@@ -93,43 +100,37 @@ plot_list <- list()
 for (i in 1:length(levels(df$time_interval))) {
 
   #Create dataframe for specific timepoint
-  tmp <- df %>% #swap to df once done developing
+  tmp <- df %>%
     filter(time_interval %in% levels(df$time_interval)[i]) %>%
     select(-c("Gene", "Replicate", "Pool", "Experiment", "Cell_Cycle_Phase",
               "Cell_Cycle_Time", "time_interval")) %>%
     filter(rowSums(.) < 15000) #remove cells with counts above 15000
 
-  #normalize df and calculate stats
-  tmp <- tmp*10000/rowSums(tmp) #normalize
-  tmp_mean = apply(tmp, 2, mean, na.rm = T) #average exp of each gene
-  tmp_sd = apply(tmp, 2, sd) #average sd of each gene
-  tmp_CV = tmp_sd/tmp_mean #calculate coefficient of variation
-  tmp_stats <- rbind(mean = tmp_mean, #merge stats in one df
-                  sd = tmp_sd, 
-                  CV = tmp_CV)
+  tmp <- tmp*10000/rowSums(tmp) #normalize df
+  
+  #calculate mean, sd, and coefficient of variation
+  tmp_stats <- as.data.frame(t( #transpose to make df ggplot friendly
+    rbind(mean = apply(tmp, 2, mean, na.rm = T),
+          sd = apply(tmp, 2, sd, na.rm = T),
+          CV = (apply(tmp, 2, sd))/(apply(tmp, 2, mean, na.rm = T))))) %>%
+    filter(mean > 0.01) %>% #remove low expr
+    drop_na() #drop empty levels
 
-  #transpose and add info
-  tmp_stats <- as.data.frame(t(tmp_stats)) #transpose to make df ggplot friendly
-  tmp_stats <- rownames_to_column(tmp_stats, "genes") #add gene name column
-  tmp_stats <- filter(tmp_stats, mean > 0.01) %>% drop_na() #filter low expr
-  row.names(tmp_stats) <- tmp_stats$genes #add gene name col
-
-  #create model
+  #fit the model
   tmp_model <- lm(log10(CV) ~ log10(mean), 
                   data = tmp_stats, 
                   row.names(tmp_stats$genes))
 
   #calculate residuals for each gene and adjust them
-  tmp_residuals <- data.frame(genes = names(tmp_model$residuals), 
+  tmp_residuals <- data.frame(row.names = names(tmp_model$residuals), 
                               residuals = tmp_model$residuals)
                 
-  tmp_stats <- merge(tmp_stats, tmp_residuals, by = "genes")
-  tmp_stats$adj_res <- tmp_stats$residuals/tmp_stats$mean 
-  
-  #add gene common name and info to df
   tmp_stats <- merge(tmp_stats, 
-                  gen_des[1:3],
-                  by = "genes") %>%
+                     tmp_residuals, 
+                     by = "row.names") %>%
+    rename("genes" = "Row.names") %>%
+    mutate(adj_res = residuals/mean) %>% #adjust residuals
+    merge(gen_des, by = "genes") %>%
     distinct() %>% #only keep unique rows
     arrange(desc(adj_res)) %>%
     relocate(common_name, .after = genes)
@@ -168,7 +169,7 @@ ggarrange(plotlist = plot_list, ncol=3, nrow =10)
 
 # Run GSA
 
-```{r, warning=FALSE}
+```{r, warning=FALSE, eval=FALSE}
 GSEA_list <- list()
 
 for (i in 1:length(stats_list)) {
@@ -197,11 +198,9 @@ for (i in 1:length(stats_list)) {
 
 }
 
-```
+#Plot GSEA results
 
-Plot GSEA results
-
-```{r, fig.width=8, fig.height=12}
+#fig.width=8, fig.height=12
 for (i in 1:length(GSEA_list)){
   
   print(dotplot(GSEA_list[[i]], 
