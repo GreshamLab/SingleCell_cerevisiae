@@ -22,6 +22,7 @@ library("tidyverse")
 library("reshape2")
 library("ggpubr")
 library("biomaRt")
+library("readxl")
 
 library("conflicted")
 
@@ -87,7 +88,7 @@ df %>%
 
 ```
 
-# Perform intra-cluster analysis
+# Intra-cluster analysis and plot regression lines
 
 For each bin, normalize and remove high and low counts. Then calculate mean, sd, and coefficient of variation and build a linear model (coefficient of variation vs mean). Then calculate the residuals, and adjust them based on the mean. 
 
@@ -156,16 +157,65 @@ for (i in 1:length(levels(df$time_interval))) {
   plot_list[[levels(df$time_interval)[i]]] <- tmp_plot #save stats
 }
 
-rm(list=ls(pattern="^tmp"))
+rm(list=ls(pattern="^tmp"), gen_des)
 
 ```
-
-# Plot linear regressions
 
 ```{r, fig.height=40, fig.width=12}
 ggarrange(plotlist = plot_list, ncol=3, nrow =10)
 
 ```
+
+# Plot cell cycle genes
+As a sanity check, plot the adjusted residuals of cell cycle genes. Their adjusted residuals should be very low since cells are clustered based on time.
+
+```{r}
+#import cell cycle annotated genes provided by Chris
+cell_cycle_genes <- read_excel("../data/Yeast_Transcriptional_Regulation.xlsx", 
+                               sheet = 1) %>%
+  rename("Systematic_Name" = "Systematic Name") %>%
+  filter(Pathway %in% "Cell Cycle") %>%
+  select(c("Pathway", "Systematic_Name", "Gene")) %>%
+  filter(Systematic_Name != "#N/A")
+cell_cycle_genes <- cell_cycle_genes$Systematic_Name
+
+#plot cell cycle genes
+stats_list %>%
+  map(~ filter(.x, #only keep genes in the cell_cycle_genes vector
+               genes %in% unique(grep(paste(cell_cycle_genes,
+                                            collapse="|"),
+                                            genes,
+                                            value = T)))) %>%
+  map2(names(stats_list), ~.x %>% mutate(Time_Point = .y)) %>% #add time column
+  bind_rows() %>%
+    ggplot(aes(x = Time_Point, #plot
+             y = adj_res)) +
+  geom_point() +
+  facet_wrap(~common_name, ncol = 3, scales = "free")
+
+rm("cell_cycle_genes")
+
+```
+
+```{r}
+stats_list %>%
+  map2(names(stats_list), ~.x %>% mutate(Time_Point = .y)) %>% #add time column
+  bind_rows() %>% 
+  ggplot(aes(x = adj_res)) +
+  geom_density(stat = "density",
+               position = "identity") +
+  xlim(-0.5,0.5)
+
+```
+
+# Rank combine
+To extract information on which are the genes with the highest coefficient of variation in the whole dataset, rank each time bin and then add the ranks for each gene - then extract the genes that rank the highest. 
+
+```{r}
+
+
+```
+
 
 # Run GSA
 
