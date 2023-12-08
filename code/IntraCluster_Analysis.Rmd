@@ -23,7 +23,10 @@ library("reshape2")
 library("ggpubr")
 library("biomaRt")
 library("readxl")
-
+library(clusterProfiler)
+library(pathview)
+library(enrichplot)
+library(org.Sc.sgd.db)
 library("conflicted")
 
 #Solve conflicts
@@ -212,56 +215,38 @@ stats_list %>%
 To extract information on which are the genes with the highest coefficient of variation in the whole dataset, rank each time bin and then add the ranks for each gene - then extract the genes that rank the highest. 
 
 ```{r}
-
-
-```
-
-
-# Run GSA
-
-```{r, warning=FALSE, eval=FALSE}
-GSEA_list <- list()
-
 for (i in 1:length(stats_list)) {
-    original_gene_list <- stats_list[[i]]$adj_res #rank on residuals
-    names(original_gene_list) <- stats_list[[i]]$genes # name the vector
-    
-    # sort the list in decreasing order (required for clusterProfiler)
-    gene_list <- na.omit(original_gene_list) # omit any NA values 
-    gene_list = sort(gene_list, decreasing = TRUE)
-    
-    #Run GSEA
-    tmp_GSEA <- 
-      gseGO(geneList = gene_list, 
-            ont ="ALL", 
-            keyType = "ENSEMBL", 
-            nPerm = 10000, 
-            minGSSize = 5, 
-            maxGSSize = 500, 
-            pvalueCutoff = 0.05,
-            verbose = FALSE, 
-            OrgDb = org.Sc.sgd.db, 
-            pAdjustMethod = "none")
-    
-    #Store results in a list
-    GSEA_list[[levels(df$time_interval)[i]]] <- tmp_GSEA #save model
-
+  stats_list[[i]]$rank <- rank(stats_list[[i]]$adj_res)
 }
 
-#Plot GSEA results
+rank_combine <- stats_list %>%
+  map(~ select(.x, c("genes", "common_name", "rank", "description"))) %>%
+  map2(names(stats_list), ~.x %>% mutate(Time_Point = .y)) %>% #add time column
+  bind_rows() %>%
+  group_by(genes, common_name, description) %>% 
+  summarise(rank_combined = sum(rank)) %>%
+  arrange(desc(rank_combined))
 
-#fig.width=8, fig.height=12
-for (i in 1:length(GSEA_list)){
-  
-  print(dotplot(GSEA_list[[i]], 
-          showCategory=10, 
-          split=".sign",
-          title = paste0(
-            "Timepoint ",
-            levels(df$time_interval)[i],
-            " minutes, adjusted residuals")) +
-    facet_grid(.~.sign))
-}
 
 ```
+
+Plot 10 genes with the highest ranks
+
+```{r}
+genes_to_plot <- as.character(rank_combine$common_name)[1:10]
+stats_list %>%
+  map(~ filter(.x, #only keep genes in the cell_cycle_genes vector
+               common_name %in% unique(grep(paste(genes_to_plot,
+                                            collapse="|"),
+                                            common_name,
+                                            value = T)))) %>%
+  map2(names(stats_list), ~.x %>% mutate(Time_Point = .y)) %>% #add time column
+  bind_rows() %>%
+    ggplot(aes(x = Time_Point, #plot
+             y = adj_res)) +
+  geom_point() +
+  facet_wrap(~common_name, scales = "free")
+
+```
+
 
