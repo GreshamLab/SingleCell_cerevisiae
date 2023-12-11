@@ -165,15 +165,16 @@ rm(list=ls(pattern="^tmp"), gen_des)
 
 ```
 
-```{r, fig.height=40, fig.width=12}
+```{r, fig.height=24, fig.width=12}
 ggarrange(plotlist = plot_list, ncol=3, nrow =10)
 
 ```
 
 # Plot cell cycle genes
+
 As a sanity check, plot the adjusted residuals of cell cycle genes. Their adjusted residuals should be very low since cells are clustered based on time.
 
-```{r}
+```{r, fig.height=20, fig.width=10}
 #import cell cycle annotated genes provided by Chris
 cell_cycle_genes <- read_excel("../data/Yeast_Transcriptional_Regulation.xlsx", 
                                sheet = 1) %>%
@@ -190,20 +191,26 @@ stats_list %>%
                                             collapse="|"),
                                             genes,
                                             value = T)))) %>%
-  map2(names(stats_list), ~.x %>% mutate(Time_Point = .y)) %>% #add time column
+  map2(names(stats_list), ~.x %>% 
+         mutate(Time_Point = .y)) %>% #add time column
   bind_rows() %>%
-    ggplot(aes(x = Time_Point, #plot
+  mutate(Time_Point = as.numeric(Time_Point)) %>%
+  ggplot(aes(x = Time_Point, #plot
              y = adj_res)) +
   geom_point() +
+  scale_x_continuous(breaks = seq(from = 0,
+                                  to = 90,
+                                  by = 6)) +
   facet_wrap(~common_name, ncol = 3, scales = "free")
 
 rm("cell_cycle_genes")
 
 ```
 
-```{r}
+```{r, warning=FALSE}
 stats_list %>%
-  map2(names(stats_list), ~.x %>% mutate(Time_Point = .y)) %>% #add time column
+  map2(names(stats_list), ~.x %>% 
+         mutate(Time_Point = .y)) %>% #add time column
   bind_rows() %>% 
   ggplot(aes(x = adj_res)) +
   geom_density(stat = "density",
@@ -213,35 +220,47 @@ stats_list %>%
 ```
 
 # Rank combine
-To extract information on which are the genes with the highest coefficient of variation in the whole dataset, rank each time bin and then add the ranks for each gene - then extract the genes that rank the highest. 
 
-```{r}
-for (i in 1:length(stats_list)) {
-  stats_list[[i]]$rank <- rank(stats_list[[i]]$adj_res)
-}
+To the genes with the highest coefficient of variation in the whole dataset, first only keep genes common in all time points, and then rank the genes in each time bin. The lowest rank for the lowest values. Then group by genes and sum the ranks for each gene - then extract the genes that rank the highest. These are the genes with the highest variability.
 
-rank_combine <- stats_list %>%
-  map(~ select(.x, c("genes", "common_name", "rank", "description"))) %>%
-  map2(names(stats_list), ~.x %>% mutate(Time_Point = .y)) %>% #add time column
+```{r, warning=FALSE, message=FALSE}
+#find genes common in all timepoints
+common_genes <- Reduce(intersect, 
+                       lapply(stats_list, 
+                              function(x) {x$genes}))
+#calculate rank
+rank_combine <- 
+  stats_list %>%
+  map(~.x %>%
+        filter(genes %in% common_genes) %>% #only keep genes in all timepoints
+        drop_na() %>%
+        mutate(rank = rank(adj_res)) %>% #rank based on adjusted residuals
+        select(c("genes", "common_name", "rank", "description"))) %>%
+  map2(names(stats_list), ~.x %>% 
+         mutate(Time_Point = .y) %>% #add time column
+         mutate(Time_Point = as.numeric(Time_Point))) %>% #convert time to num
   bind_rows() %>%
   group_by(genes, common_name, description) %>% 
   summarise(rank_combined = sum(rank)) %>%
-  arrange(desc(rank_combined))
+  arrange(desc(rank_combined)) #arrange from highest to lowest
 
+rm(common_genes)
 
 ```
 
 Plot 10 genes with the highest ranks
 
 ```{r}
-genes_to_plot <- as.character(rank_combine$common_name)[1:10]
+genes_to_plot <- as.character(rank_combine$genes)[1:10]
 stats_list %>%
-  map(~ filter(.x, #only keep genes in the cell_cycle_genes vector
-               common_name %in% unique(grep(paste(genes_to_plot,
+  map(~ filter(.x, 
+               genes %in% unique(grep(paste(genes_to_plot,
                                             collapse="|"),
-                                            common_name,
+                                            genes,
                                             value = T)))) %>%
-  map2(names(stats_list), ~.x %>% mutate(Time_Point = .y)) %>% #add time column
+  map2(names(stats_list), ~.x %>% 
+         mutate(Time_Point = .y) %>%
+         mutate(Time_Point = as.numeric(Time_Point))) %>% #add time column
   bind_rows() %>%
     ggplot(aes(x = Time_Point, #plot
              y = adj_res)) +
