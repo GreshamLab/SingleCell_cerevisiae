@@ -1,5 +1,5 @@
 ---
-title: "Cluster_Cells"
+title: "03_Cluster_Cells"
 author: "Simone Zaghen"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
@@ -10,18 +10,20 @@ output:
       collapsed: false
       smooth_scroll: true
 knit: (function(inputFile, encoding) {
-  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/Cluster_Cells") })
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/") })
 
 ---
+
+Based on the bootstrapping results, here we want to check how many cells are in each of the potential clusters we will define. We want to know how many cells are in each cluster in order not to lose statistical power if too few cells are clustered together. Once we cluster cells based on cell cycle and time in the cell cycle, we will move on and do intra-cluster analysis to check which genes are the most variable in each cluster. 
 
 # Load packages
 
 ```{r, results='hide', message=FALSE}
 #Load packages from CRAN
-library("tidyverse")
-library("reshape2")
-library("Seurat")
-library("conflicted")
+library(tidyverse)
+library(reshape2)
+library(Seurat)
+library(conflicted)
 
 #Solve conflicts
 conflict_prefer("select", "dplyr")
@@ -124,7 +126,10 @@ srat@meta.data <- srat@meta.data %>%
          width = (max-min)/30, 
          bin1 = ceiling((Cell_Cycle_Time-min)/width),
          time_interval = ifelse(Cell_Cycle_Time==min, bin1 + 1, bin1)) %>%
-  select(-c("max", "min", "width", "bin1"))
+  select(-c("max", "min", "width", "bin1")) %>%
+  mutate(Cell_Cycle_Phase = as.factor(Cell_Cycle_Phase)) %>% #order cell cycle
+  mutate(Cell_Cycle_Phase = fct_relevel(Cell_Cycle_Phase,
+                                        c("G1", "S", "G2", "M", "M-G1")))
 
 ```
 

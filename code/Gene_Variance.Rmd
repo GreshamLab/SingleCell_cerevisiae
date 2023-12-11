@@ -1,5 +1,5 @@
 ---
-title: "Gene Variance"
+title: "01_Gene Variance"
 author: "Simone Zaghen"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
@@ -10,7 +10,7 @@ output:
       collapsed: false
       smooth_scroll: true
 knit: (function(inputFile, encoding) {
-  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/Gene_Variance/") })
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/") })
 
 ---
 
@@ -27,8 +27,8 @@ library(enrichplot)
 library(org.Sc.sgd.db)
 
 #Install and load packages from CRAN
-library('tidyverse')
-library('reshape2')
+library(tidyverse)
+library(reshape2)
 library(conflicted)
 
 #Solve conflicts
@@ -96,6 +96,7 @@ ggplot(tmp, aes(x = Counts)) +
   theme_classic()
 
 ```
+
 Genes with very high counts can be considered artifacts. I will thus remove cells for which the gene counts are above 15000. 
 Then normalize the data to account for sequencing depth. Scale the data to 10,000 (as if all cells have 10k UMIs overall).
 

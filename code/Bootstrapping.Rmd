@@ -1,5 +1,5 @@
 ---
-title: "Bootstrapping"
+title: "02_Bootstrapping"
 author: "Simone Zaghen"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
@@ -10,7 +10,7 @@ output:
       collapsed: false
       smooth_scroll: true
 knit: (function(inputFile, encoding) {
-  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/Bootstrapping/") })
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/") })
 ---
 
 The idea is to assign time and cell cycle to cells and then look at the variance of the genes in the same cell cycle/timeframe window. To do this without losing statistical power/accuracy, we need to check how many cells we need in each timeframe/cycle phase. To do this, we bootstrap the dataset and check which residuals we have with a specific number of cells, to see whenever we get close to the residuals previously calculated. This will tell us how big the subset of cells needs to be not to lose statistical significance. 

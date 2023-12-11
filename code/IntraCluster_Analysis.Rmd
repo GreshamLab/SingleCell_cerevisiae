@@ -1,5 +1,5 @@
 ---
-title: "Intra-cluster variance analysis"
+title: "04_Intra-cluster variance analysis"
 author: "Simone Zaghen"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
@@ -18,20 +18,21 @@ knit: (function(inputFile, encoding) {
 
 ```{r, results='hide', message=FALSE}
 #Load packages from CRAN
-library("tidyverse")
-library("reshape2")
-library("ggpubr")
-library("biomaRt")
-library("readxl")
-library(clusterProfiler)
-library(pathview)
-library(enrichplot)
-library(org.Sc.sgd.db)
-library("conflicted")
+library(tidyverse)
+library(reshape2)
+library(ggpubr)
+library(biomaRt)
+library(readxl)
+library(conflicted)
 
 #Solve conflicts
 conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
+conflict_prefer("rename", "dplyr")
+
+#Create directories
+if (!dir.exists("../results/IntraCluster_Analysis")){
+  dir.create("../results/IntraCluster_Analysis/")}
 
 ```
 
