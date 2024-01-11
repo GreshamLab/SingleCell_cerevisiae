@@ -324,7 +324,7 @@ df_stats <- merge(df_stats,
                   gen_des[1:3],
                   by = "genes") %>%
   distinct() %>% #only keep unique rows
-  arrange(desc(adj_res)) %>%
+  arrange(desc(residuals)) %>%
   relocate(common_name, .after = genes)
 
 write.csv2(df_stats, 
@@ -335,7 +335,7 @@ rm(list = c("gen_des", "tmp"))
 
 ## Check gene count distribution of the top genes
 
-Plot the gene count distribution.
+Plot the gene count distribution of the top 10 genes with highest non-adjusted residuals
 
 ```{r, fig.show='hold', out.width='50%'}
 subset(df_norm, select = (df_stats$genes)[1:10]) %>%

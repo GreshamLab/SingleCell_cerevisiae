@@ -39,7 +39,7 @@ Load the gene count matrix and load the metadata in which Chris estimated the ce
 
 ```{r, message = F}
 rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
-metadata <- read_tsv("../data/Cell_Cycle_Metadata.tsv.gz") #cell cycle data
+metadata <- read_tsv("../data/Cell_Cycle_Metadata_01112024.tsv.gz") #cell cycle data
 df_stats <- read.csv2("../results/Gene_Variance/gene_statistics_and_description.csv", row.names = 1)
 
 rawdata <- cbind(rawdata, metadata)

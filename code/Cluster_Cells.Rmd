@@ -35,7 +35,7 @@ conflict_prefer("filter", "dplyr")
 
 ```{r, results='hide', message=FALSE}
 rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
-metadata <- read_tsv("../data/Cell_Cycle_Metadata.tsv.gz") #cell cycle data
+metadata <- read_tsv("../data/Cell_Cycle_Metadata_01112024.tsv.gz") #cell cycle data
 
 ```
 

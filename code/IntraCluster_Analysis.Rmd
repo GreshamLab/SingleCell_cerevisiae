@@ -24,15 +24,17 @@ library(ggpubr)
 library(biomaRt)
 library(readxl)
 library(conflicted)
+library(clusterProfiler)
+library(pathview)
+library(enrichplot)
+library(org.Sc.sgd.db)
+
 
 #Solve conflicts
 conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
 conflict_prefer("rename", "dplyr")
-
-#Create directories
-if (!dir.exists("../results/IntraCluster_Analysis")){
-  dir.create("../results/IntraCluster_Analysis/")}
+conflict_prefer("intersect", "base")
 
 ```
 
@@ -40,7 +42,7 @@ if (!dir.exists("../results/IntraCluster_Analysis")){
 
 ```{r, results='hide', message=FALSE}
 rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
-metadata <- read_tsv("../data/Cell_Cycle_Metadata.tsv.gz") #cell cycle data
+metadata <- read_tsv("../data/Cell_Cycle_Metadata_01112024.tsv.gz") #cell cycle data
 
 #load gene info
 ensembl <- useMart(biomart = "ENSEMBL_MART_ENSEMBL",
@@ -80,7 +82,7 @@ df <- cbind(rawdata, metadata) %>% #merge data and metadata
 
 ```
 
-Check how many cells/bin we have
+Check how many cells we have in each bin
 
 ```{r}
 df %>%
@@ -94,7 +96,7 @@ df %>%
 
 # Intra-cluster analysis and plot regression lines
 
-For each bin, normalize and remove high and low counts. Then calculate mean, sd, and coefficient of variation and build a linear model (coefficient of variation vs mean). Then calculate the residuals, and adjust them based on the mean. 
+For each bin, normalize and remove high and low counts. Then calculate mean, sd, and coefficient of variation and build a linear model (coefficient of variation vs mean). Then calculate the residuals, and adjust them based on the mean. In the past we used adjusted residuals, but we decided not to use them here for further plots because when the mean is very low, the adj_res become very high and they 'overpower' more interesting genes with higher residuals. We still calculate them here in case a quick comparison is necessary. 
 
 ```{r}
 #define lists to store output
@@ -172,7 +174,7 @@ ggarrange(plotlist = plot_list, ncol=3, nrow =10)
 
 # Plot cell cycle genes
 
-As a sanity check, plot the adjusted residuals of cell cycle genes. Their adjusted residuals should be very low since cells are clustered based on time.
+As a sanity check, plot the both the non-adjusted and the adjusted residuals of cell cycle genes. Their residuals should be very low since cells are clustered based on time. In the past we used adjusted residuals, but we decided not to use them here for further plots because when the mean is very low, the adj_res become very high and they 'overpower' more interesting genes with higher residuals. We still calculate them here to quickly compare them with the non-adjusted residuals. 
 
 ```{r, fig.height=40, fig.width=7}
 #import cell cycle annotated genes provided by Chris
@@ -195,7 +197,7 @@ stats_list %>%
          mutate(Time_Point = .y)) %>% #add time column
   bind_rows() %>%
   mutate(Time_Point = as.numeric(Time_Point)) %>%
-  select(c("genes", "common_name", "mean", "adj_res", "Time_Point")) %>%
+  select(c("genes", "common_name", "mean", "residuals", "adj_res", "Time_Point")) %>%
   melt(id = c("genes", "common_name", "Time_Point")) %>%
   ggplot(aes(x = Time_Point, #plot
              y = value)) +
@@ -206,7 +208,7 @@ stats_list %>%
   expand_limits(x = 0, y = 0) +
   facet_wrap(common_name ~ variable, 
              scales = "free",
-             ncol = 2) #facet grid to have mean and CV
+             ncol = 3)
 rm("cell_cycle_genes")
 
 ```
@@ -216,7 +218,7 @@ stats_list %>%
   map2(names(stats_list), ~.x %>% 
          mutate(Time_Point = .y)) %>% #add time column
   bind_rows() %>% 
-  select(c("genes", "mean", "adj_res")) %>%
+  select(c("genes", "mean", "residuals", "adj_res")) %>%
   melt(id = "genes") %>%
   ggplot(aes(x = value)) +
   geom_density(stat = "density",
@@ -242,7 +244,7 @@ rank_combine <-
   map(~.x %>%
         filter(genes %in% common_genes) %>% #only keep genes in all timepoints
         drop_na() %>%
-        mutate(rank = rank(adj_res)) %>% #rank based on adjusted residuals
+        mutate(rank = rank(residuals)) %>% #rank based on non-adjusted residuals
         select(c("genes", "common_name", "rank", "description"))) %>%
   map2(names(stats_list), ~.x %>% 
          mutate(Time_Point = .y) %>% #add time column
@@ -253,13 +255,14 @@ rank_combine <-
   arrange(desc(rank_combined)) #arrange from highest to lowest
 
 rm(common_genes)
+write.csv2(rank_combine, "../results/04_RankCombine.csv", row.names = F)
 
 ```
 
-Plot 10 genes with the highest ranks
+Plot genes with the highest ranks
 
 ```{r, fig.height=60, fig.width=7}
-genes_to_plot <- as.character(rank_combine$genes)[1:20]
+genes_to_plot <- as.character(rank_combine$genes)[2:20]
 
 stats_list %>%
   map(~ filter(.x, 
@@ -271,7 +274,7 @@ stats_list %>%
          mutate(Time_Point = .y) %>%
          mutate(Time_Point = as.numeric(Time_Point))) %>% #add time column
   bind_rows() %>%
-  select(c("genes", "common_name", "mean", "adj_res", "Time_Point")) %>%
+  select(c("genes", "common_name", "mean", "residuals", "Time_Point")) %>%
   melt(id = c("genes", "common_name", "Time_Point")) %>%
   ggplot(aes(x = Time_Point, #plot
              y = value)) +
@@ -285,4 +288,36 @@ stats_list %>%
              ncol = 2)
 
 ```
+
+#GSEA on rank combined list
+
+```{r, eval=FALSE}
+original_gene_list <- rank_combine$rank_combined #rank on residuals
+names(original_gene_list) <- rank_combine$genes # name the vector
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list<-na.omit(original_gene_list) # omit any NA values 
+gene_list = sort(gene_list, decreasing = TRUE)
+
+# Run GSEA
+gsea <- 
+  gseGO(geneList = gene_list, 
+        ont ="all", 
+        OrgDb = org.Sc.sgd.db, 
+        keyType = "ENSEMBL", 
+        nPerm = 10000, 
+        minGSSize = 4, 
+        maxGSSize = 200, 
+        pvalueCutoff = 0.05, 
+        pAdjustMethod = "none",
+        scoreType = "pos",
+        verbose = FALSE)
+
+dotplot(gsea, 
+        showCategory=10, 
+        split=".sign", 
+        title = "Rank combined residuals") + 
+  facet_grid(.~.sign) 
+
+```
+
 
