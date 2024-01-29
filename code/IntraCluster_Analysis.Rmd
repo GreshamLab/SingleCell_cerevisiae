@@ -24,11 +24,6 @@ library(ggpubr)
 library(biomaRt)
 library(readxl)
 library(conflicted)
-library(clusterProfiler)
-library(pathview)
-library(enrichplot)
-library(org.Sc.sgd.db)
-
 
 #Solve conflicts
 conflict_prefer("select", "dplyr")
@@ -46,8 +41,7 @@ metadata <- read_tsv("../data/Cell_Cycle_Metadata_01112024.tsv.gz") #cell cycle 
 
 #load gene info
 ensembl <- useMart(biomart = "ENSEMBL_MART_ENSEMBL",
-                   dataset = "scerevisiae_gene_ensembl",
-                   host = "https://Jul2018.archive.ensembl.org") 
+                   dataset = "scerevisiae_gene_ensembl") 
 
 gen_des <- getBM(attributes = c("ensembl_gene_id",
                                 "description",
@@ -69,14 +63,14 @@ df <- cbind(rawdata, metadata) %>% #merge data and metadata
   filter(Pool %in% c("1", "2")) %>% #timepoints before rapamycin treatment
   filter(Gene %in% "WT") %>% #only wt strain
   drop_na() %>% #remove empty levels
-  mutate(max = max(Cell_Cycle_Time),
+  mutate(max = max(Cell_Cycle_Time), #divide cells in time bins
          min = min(Cell_Cycle_Time),
          width = (max-min)/30,
          bin1 = ceiling((Cell_Cycle_Time - min)/width),
          time_interval = ifelse(Cell_Cycle_Time == min, 
                                 bin1 + 1, 
-                                bin1)) %>%
-  mutate(time_interval = time_interval * 3) %>% #each bin should reflect minutes
+                                bin1),
+         time_interval = time_interval * 3) %>% #each bin should reflect minutes
   select(-c("max", "min", "width", "bin1")) %>%
   mutate(time_interval = factor(time_interval))
 
@@ -163,7 +157,7 @@ for (i in 1:length(levels(df$time_interval))) {
   plot_list[[levels(df$time_interval)[i]]] <- tmp_plot #save stats
 }
 
-rm(list=ls(pattern="^tmp"), gen_des)
+rm(list=ls(pattern="^tmp"))
 
 ```
 
@@ -176,7 +170,9 @@ ggarrange(plotlist = plot_list, ncol=3, nrow =10)
 
 As a sanity check, plot the both the non-adjusted and the adjusted residuals of cell cycle genes. Their residuals should be very low since cells are clustered based on time. In the past we used adjusted residuals, but we decided not to use them here for further plots because when the mean is very low, the adj_res become very high and they 'overpower' more interesting genes with higher residuals. We still calculate them here to quickly compare them with the non-adjusted residuals. 
 
-```{r, fig.height=40, fig.width=7}
+NB: y scales are different!
+
+```{r, fig.height=40, fig.width=10}
 #import cell cycle annotated genes provided by Chris
 cell_cycle_genes <- read_excel("../data/Yeast_Transcriptional_Regulation.xlsx", 
                                sheet = 1) %>%
@@ -213,6 +209,8 @@ rm("cell_cycle_genes")
 
 ```
 
+Check the mean, residuals, and adjusted residuals distributions
+
 ```{r, warning=FALSE}
 stats_list %>%
   map2(names(stats_list), ~.x %>% 
@@ -231,7 +229,7 @@ stats_list %>%
 
 # Rank combine
 
-To the genes with the highest coefficient of variation in the whole dataset, first only keep genes common in all time points, and then rank the genes in each time bin. The lowest rank for the lowest values. Then group by genes and sum the ranks for each gene - then extract the genes that rank the highest. These are the genes with the highest variability.
+First only keep genes common in all time points, then rank the genes in each time bin based on residuals. The lowest rank is assigned to the lowest variable gene in that time bin. Then the ranks for each gene in each time bin are summed together - then extract the genes that rank the highest. These are the genes with the highest variability. Finally we also extract the genes that rank the lowest, which are genes with lowest variability.
 
 ```{r, warning=FALSE, message=FALSE}
 #find genes common in all timepoints
@@ -259,10 +257,14 @@ write.csv2(rank_combine, "../results/04_RankCombine.csv", row.names = F)
 
 ```
 
-Plot genes with the highest ranks
+# Most variable genes
+
+Extract the most variable genes and plot their mean and residuals. Then do a violin plot of their counts over time. 
+
+## Plot genes with the highest ranks - so most variable
 
 ```{r, fig.height=60, fig.width=7}
-genes_to_plot <- as.character(rank_combine$genes)[2:20]
+genes_to_plot <- as.character(rank_combine$genes)[1:20]
 
 stats_list %>%
   map(~ filter(.x, 
@@ -271,11 +273,16 @@ stats_list %>%
                                             genes,
                                             value = T)))) %>%
   map2(names(stats_list), ~.x %>% 
-         mutate(Time_Point = .y) %>%
-         mutate(Time_Point = as.numeric(Time_Point))) %>% #add time column
+         mutate(Time_Point = .y,
+                Time_Point = as.numeric(Time_Point))) %>% #add time column
   bind_rows() %>%
-  select(c("genes", "common_name", "mean", "residuals", "Time_Point")) %>%
-  melt(id = c("genes", "common_name", "Time_Point")) %>%
+  mutate(genes = factor(genes, #sort based on combined residuals
+                        levels = genes_to_plot),
+         gene = paste(common_name, genes, sep = "|")) %>%
+  arrange(match(genes, genes_to_plot)) %>%
+  mutate(gene = factor(gene, levels = unique(gene))) %>%
+  select(c("gene", "mean", "residuals", "Time_Point")) %>%
+  melt(id = c("gene", "Time_Point")) %>%
   ggplot(aes(x = Time_Point, #plot
              y = value)) +
   geom_point() +
@@ -283,41 +290,90 @@ stats_list %>%
                                   to = 90,
                                   by = 6)) +
   expand_limits(x = 0, y = 0) +
-  facet_wrap(common_name ~ variable, 
+  facet_wrap(gene ~ variable, 
              scales = "free", 
              ncol = 2)
 
 ```
 
-#GSEA on rank combined list
+## Do box plot of gene counts for these genes
 
-```{r, eval=FALSE}
-original_gene_list <- rank_combine$rank_combined #rank on residuals
-names(original_gene_list) <- rank_combine$genes # name the vector
-# sort the list in decreasing order (required for clusterProfiler)
-gene_list<-na.omit(original_gene_list) # omit any NA values 
-gene_list = sort(gene_list, decreasing = TRUE)
-
-# Run GSEA
-gsea <- 
-  gseGO(geneList = gene_list, 
-        ont ="all", 
-        OrgDb = org.Sc.sgd.db, 
-        keyType = "ENSEMBL", 
-        nPerm = 10000, 
-        minGSSize = 4, 
-        maxGSSize = 200, 
-        pvalueCutoff = 0.05, 
-        pAdjustMethod = "none",
-        scoreType = "pos",
-        verbose = FALSE)
-
-dotplot(gsea, 
-        showCategory=10, 
-        split=".sign", 
-        title = "Rank combined residuals") + 
-  facet_grid(.~.sign) 
+```{r, fig.height=64, fig.width=7}
+df %>%
+  select(c(all_of(genes_to_plot))) %>% #select the most variable genes
+  cbind(df[5848:5850]) %>% #keep metadata as well
+  melt(id = c("Cell_Cycle_Phase", "Cell_Cycle_Time", "time_interval"),
+       value.name = "counts",
+       variable.name = "genes") %>% #melt for ggplot
+  merge(gen_des %>% select(c("genes", "common_name"))) %>% #get common gene name
+  mutate(gene = paste(common_name, genes, sep = "|")) %>% #use both genes names
+  arrange(match(genes, genes_to_plot)) %>% #arrange genes based on residuals
+  mutate(gene = factor(gene, levels = unique(gene))) %>% #convert to levels
+  select(c("time_interval","counts","gene")) %>%
+  ggplot(aes(x = time_interval,
+             y = counts)) +
+  geom_boxplot() +
+  facet_wrap(~gene,
+             scales = "free",
+             ncol = 1)
 
 ```
 
+# Plot the least variable genes
+
+```{r, fig.height=60, fig.width=7}
+genes_to_plot <- as.character(tail(rank_combine$genes, n = 20))
+
+stats_list %>%
+  map(~ filter(.x, 
+               genes %in% unique(grep(paste(genes_to_plot,
+                                            collapse="|"),
+                                            genes,
+                                            value = T)))) %>%
+  map2(names(stats_list), ~.x %>% 
+         mutate(Time_Point = .y,
+                Time_Point = as.numeric(Time_Point))) %>% #add time column
+  bind_rows() %>%
+  mutate(genes = factor(genes, #sort based on combined residuals
+                        levels = genes_to_plot),
+         gene = paste(common_name, genes, sep = "|")) %>%
+  arrange(match(genes, genes_to_plot)) %>%
+  mutate(gene = factor(gene, levels = unique(gene))) %>%
+  select(c("gene", "mean", "residuals", "Time_Point")) %>%
+  melt(id = c("gene", "Time_Point")) %>%
+  ggplot(aes(x = Time_Point, #plot
+             y = value)) +
+  geom_point() +
+    scale_x_continuous(breaks = seq(from = 0,
+                                  to = 90,
+                                  by = 6)) +
+  expand_limits(x = 0, y = 0) +
+  facet_wrap(gene ~ variable, 
+             scales = "free", 
+             ncol = 2)
+
+```
+
+## Do box plot of gene counts for these genes
+
+```{r, fig.height=64, fig.width=7}
+df %>%
+  select(c(all_of(genes_to_plot))) %>% #select the most variable genes
+  cbind(df[5848:5850]) %>% #keep metadata as well
+  melt(id = c("Cell_Cycle_Phase", "Cell_Cycle_Time", "time_interval"),
+       value.name = "counts",
+       variable.name = "genes") %>% #melt for ggplot
+  merge(gen_des %>% select(c("genes", "common_name"))) %>% #get common gene name
+  mutate(gene = paste(common_name, genes, sep = "|")) %>% #use both genes names
+  arrange(match(genes, genes_to_plot)) %>% #arrange genes based on residuals
+  mutate(gene = factor(gene, levels = unique(gene))) %>% #convert to levels
+  select(c("time_interval","counts","gene")) %>%
+  ggplot(aes(x = time_interval,
+             y = counts)) +
+  geom_boxplot() +
+  facet_wrap(~gene,
+             scales = "free",
+             ncol = 1)
+
+```
 
