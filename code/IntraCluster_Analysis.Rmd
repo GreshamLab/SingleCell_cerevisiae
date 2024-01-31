@@ -358,7 +358,7 @@ stats_list %>%
 
 ```{r, fig.height=64, fig.width=7}
 df %>%
-  select(c(all_of(genes_to_plot))) %>% #select the most variable genes
+  select(c(all_of(genes_to_plot))) %>% #select the least variable genes
   cbind(df[5848:5850]) %>% #keep metadata as well
   melt(id = c("Cell_Cycle_Phase", "Cell_Cycle_Time", "time_interval"),
        value.name = "counts",
@@ -376,4 +376,43 @@ df %>%
              ncol = 1)
 
 ```
+
+# Have some high variability genes next to some low variability genes
+
+Trying to plot high variability next to low variability, I noticed that the low variability are generally on way lower scales/counts. 
+
+```{r, fig.width=10, fig.height=12}
+df %>%
+  select(c("YOR383C",  #high var
+           "YOR234C", #low var
+           "YLR286C", #high var
+           "YPL037C", #low var
+           "YJL189W", #high var
+           "YOR133W") #low var
+         ) %>%
+  cbind(df[5848:5850]) %>% #keep metadata as well
+  melt(id = c("Cell_Cycle_Phase", "Cell_Cycle_Time", "time_interval"),
+       value.name = "counts",
+       variable.name = "genes") %>% #melt for ggplot
+  merge(gen_des %>% select(c("genes", "common_name"))) %>% #get common gene name
+  mutate(gene = paste(common_name, genes, sep = "|")) %>% #use both genes names
+  mutate(gene = factor(gene, levels = unique(gene))) %>% #convert to levels
+  mutate(gene = fct_relevel(gene,
+                            c("FIT3|YOR383C",
+                              "RPL33B|YOR234C",
+                              "CTS1|YLR286C",
+                              "EGD1|YPL037C",
+                              "RPL39|YJL189W",
+                              "EFT1|YOR133W"))) %>%
+  select(c("time_interval","counts","gene")) %>%
+  ggplot(aes(x = time_interval,
+             y = counts)) +
+  geom_boxplot() +
+  ggtitle("High variability on the left, low variability on the right") +
+  facet_wrap(~gene,
+             ncol = 2)
+
+```
+
+
 
