@@ -223,3 +223,40 @@ rm(list=ls(pattern="^tmp"))
 
 ```
 
+# Plot the most variable genes over the experiment
+
+```{r }
+genes_to_plot <- as.character(intracluster_output$`2`$rank$genes[1:20])
+
+toplot <- intracluster_output %>%
+  map(~ pluck(.x, "rank")) %>%
+  map2(names(intracluster_output), ~.x %>% 
+         mutate(time_bin = .y,
+                time_bin = as.numeric(time_bin))) %>% #add time bin col
+  map(~ filter(.x, #only keep genes in the cell_cycle_genes vector
+               genes %in% unique(grep(paste(genes_to_plot,
+                                            collapse="|"),
+                                            genes,
+                                            value = T)))) %>%
+  bind_rows() %>%
+  mutate(gene = paste(common_name, genes, sep = "|")) %>% #use both genes names
+  mutate(gene = factor(gene, levels = unique(gene))) %>% #convert to levels
+  ungroup() %>%
+  select(c("rank_combined","time_bin", "gene"))
+
+toplot %>% 
+  ggplot(aes(x = time_bin,
+             y = rank_combined,
+             group = gene,
+             color = gene
+             )) + 
+  geom_line() + 
+  ylim(0,max(toplot$rank_combined)) +
+  theme(legend.position = "bottom") 
+  #facet_wrap(~ gene, ncol=3, scales = "free")
+  
+```
+
+
+
+
