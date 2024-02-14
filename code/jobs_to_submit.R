@@ -1,10 +1,13 @@
 #This script runs the specified R markdown files in the folder, generating 
 #the folder structure, the files, and the plots used for analysis
 
-files <- c("Gene_Variance.Rmd",
-           "Bootstrapping.Rmd",
-           "Cluster_Cells.Rmd",
-           "IntraCluster_Analysis.Rmd")
+files <- c(
+  "Gene_Variance.Rmd",
+  "Bootstrapping.Rmd",
+  "Cluster_Cells.Rmd",
+  "IntraCluster_Analysis.Rmd",
+  "IntraCluster_AllTimePoints.Rmd"
+  )
 
 if (!dir.exists("../results/")){dir.create("../results/")}
 
