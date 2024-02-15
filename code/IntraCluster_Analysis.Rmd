@@ -269,7 +269,7 @@ Extract the most variable genes and plot their mean and residuals. Then do a vio
 ## Plot genes with the highest ranks - so most variable
 
 ```{r, fig.height=60, fig.width=7}
-genes_to_plot <- as.character(rank_combine$genes)[1:20]
+genes_to_plot <- as.character(rank_combine$genes)[3:22] #skips 2 ribosomial genes
 
 stats_list %>%
   map(~ filter(.x, 
@@ -301,9 +301,9 @@ stats_list %>%
 
 ```
 
-## Do box plot of gene counts for these genes
+## Do violon plot of gene counts for these genes
 
-```{r, fig.height=64, fig.width=7}
+```{r, fig.height=64, fig.width=10}
 df %>%
   select(c(all_of(genes_to_plot))) %>% #select the most variable genes
   cbind(df[5848:5850]) %>% #keep metadata as well
@@ -317,7 +317,7 @@ df %>%
   select(c("time_interval","counts","gene")) %>%
   ggplot(aes(x = time_interval,
              y = counts)) +
-  geom_boxplot() +
+  geom_violin() +
     facet_wrap(~gene,
              scales = "free",
              ncol = 1)
@@ -359,9 +359,9 @@ stats_list %>%
 
 ```
 
-## Do box plot of gene counts for these genes
+## Do violin plot of gene counts for these genes
 
-```{r, fig.height=64, fig.width=7}
+```{r, fig.height=64, fig.width=10}
 df %>%
   select(c(all_of(genes_to_plot))) %>% #select the least variable genes
   cbind(df[5848:5850]) %>% #keep metadata as well
@@ -375,7 +375,7 @@ df %>%
   select(c("time_interval","counts","gene")) %>%
   ggplot(aes(x = time_interval,
              y = counts)) +
-  geom_boxplot() +
+  geom_violin() +
   facet_wrap(~gene,
              scales = "free",
              ncol = 1)
@@ -386,7 +386,7 @@ df %>%
 
 Trying to plot high variability next to low variability, I noticed that the low variability are generally on way lower scales/counts. 
 
-```{r, fig.width=10, fig.height=12}
+```{r, fig.height=12, fig.width=15}
 df %>%
   select(c("YOR383C",  #high var
            "YOR234C", #low var
@@ -412,7 +412,7 @@ df %>%
   select(c("time_interval","counts","gene")) %>%
   ggplot(aes(x = time_interval,
              y = counts)) +
-  geom_boxplot() +
+  geom_violin() +
   ggtitle("High variability on the left, low variability on the right") +
   facet_wrap(~gene,
              ncol = 2)
