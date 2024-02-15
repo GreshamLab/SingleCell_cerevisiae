@@ -76,6 +76,13 @@ df <- cbind(rawdata, metadata) %>% #merge data and metadata
 
 ```
 
+Normalize data
+
+```{r}
+df[1:5843] <- df[1:5843]*10000/rowSums(df[1:5843]) #normalize
+
+```
+
 Check how many cells we have in each bin
 
 ```{r}
@@ -107,8 +114,6 @@ for (i in 1:length(levels(df$time_interval))) {
               "Cell_Cycle_Time", "time_interval")) %>%
     filter(rowSums(.) < 15000) #remove cells with counts above 15000
 
-  tmp <- tmp*10000/rowSums(tmp) #normalize df
-  
   #calculate mean, sd, and coefficient of variation
   tmp_stats <- as.data.frame(t( #transpose to make df ggplot friendly
     rbind(mean = apply(tmp, 2, mean, na.rm = T),
@@ -313,7 +318,7 @@ df %>%
   ggplot(aes(x = time_interval,
              y = counts)) +
   geom_boxplot() +
-  facet_wrap(~gene,
+    facet_wrap(~gene,
              scales = "free",
              ncol = 1)
 
