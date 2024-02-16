@@ -421,3 +421,90 @@ df %>%
 
 ```
 
+# Extract genes with low mean and high residuals 
+
+The most interesting genes are those with a very low mean, so overall low expression, but with high residuals. These genes are lowly expressed in most cells, but in some are highly expressed and thus have high variability. These genes are the most interesting for us. 
+
+## Plot their mean and residuals
+
+```{r, fig.height=60, fig.width=10}
+tmp <- stats_list %>%
+  map(~ filter(.x, mean < 2)) %>% #keep genes with low counts
+  map(~ filter(.x, #keep genes with high rank
+               genes %in% unique(grep(paste(rank_combine$genes[1:100],
+                                            collapse="|"),
+                                            genes,
+                                            value = T))))
+#need to break the pipe to get the common genes out
+common_genes <- Reduce(intersect, #get genes present in all timebins 
+                       lapply(tmp, 
+                              function(x) {
+                                x$genes}))
+
+tmp %>% 
+  map(~ filter(.x, #only keep genes in the all timebins
+               genes %in% unique(grep(paste(common_genes,
+                          collapse="|"),
+                          genes,
+                          value = T)))) %>%
+  map2(names(stats_list), ~.x %>% 
+         mutate(Time_Point = .y,
+                Time_Point = as.numeric(Time_Point))) %>% #add time column
+  bind_rows() %>%
+  mutate(genes = factor(genes, #sort based on combined residuals
+                        levels = rank_combine$genes[1:100]),
+         gene = paste(common_name, genes, sep = "|")) %>%
+  arrange(match(genes, rank_combine$genes[1:100])) %>%
+  mutate(gene = factor(gene, levels = unique(gene))) %>%
+  select(c("gene", "mean", "residuals", "Time_Point")) %>%
+  melt(id = c("gene", "Time_Point")) %>%
+  ggplot(aes(x = Time_Point, #plot
+             y = value)) +
+  geom_point() +
+    scale_x_continuous(breaks = seq(from = 0,
+                                  to = 90,
+                                  by = 6)) +
+  expand_limits(x = 0, y = 0) +
+  facet_wrap(gene ~ variable, 
+             scales = "free", 
+             ncol = 2)
+
+```
+
+## Plot their gene counts
+
+```{r, fig.height=60, fig.width=10}
+df %>%
+  select(c(all_of(common_genes))) %>% #select the least variable genes
+  cbind(df[5848:5850]) %>% #keep metadata as well
+  melt(id = c("Cell_Cycle_Phase", "Cell_Cycle_Time", "time_interval"),
+       value.name = "counts",
+       variable.name = "genes") %>% #melt for ggplot
+  merge(gen_des %>% select(c("genes", "common_name"))) %>% #get common gene name
+  mutate(gene = paste(common_name, genes, sep = "|")) %>% #use both genes names
+  arrange(match(genes, rank_combine$genes[1:100])) %>% #arrange genes based on residuals
+  mutate(gene = factor(gene, levels = unique(gene))) %>% #convert to levels
+  select(c("time_interval","counts","gene")) %>%
+  ggplot(aes(x = time_interval,
+             y = counts)) +
+  geom_violin() +
+  facet_wrap(~gene,
+             scales = "free",
+             ncol = 1)
+
+```
+
+## Plot FIT2 vs FIT3
+
+Fit2 and Fit3 are interesting genes, try to plot their counts against each other to see if they correlate
+
+```{r}
+df %>%
+  select(c("YOR382W", "YOR383C")) %>% #select the least variable genes
+  cbind(df[5848:5850]) %>% #keep metadata as well
+  ggplot(aes(x = YOR382W,
+             y = YOR383C)) +
+  geom_point()
+
+```
+
