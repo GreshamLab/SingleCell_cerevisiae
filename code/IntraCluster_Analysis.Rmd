@@ -237,7 +237,6 @@ stats_list %>%
 First only keep genes common in all time points, then rank the genes in each time bin based on residuals. The lowest rank is assigned to the lowest variable gene in that time bin. Then the ranks for each gene in each time bin are summed together - then extract the genes that rank the highest. These are the genes with the highest variability. Finally we also extract the genes that rank the lowest, which are genes with lowest variability.
 
 ```{r, warning=FALSE, message=FALSE}
-
 #calculate rank
 rank_combine <- 
   stats_list %>%
@@ -475,7 +474,7 @@ tmp %>%
 
 ```{r, fig.height=60, fig.width=10}
 df %>%
-  select(c(all_of(common_genes))) %>% #select the least variable genes
+  select(c(all_of(common_genes))) %>% #select the interesting genes
   cbind(df[5848:5850]) %>% #keep metadata as well
   melt(id = c("Cell_Cycle_Phase", "Cell_Cycle_Time", "time_interval"),
        value.name = "counts",
@@ -500,11 +499,49 @@ Fit2 and Fit3 are interesting genes, try to plot their counts against each other
 
 ```{r}
 df %>%
-  select(c("YOR382W", "YOR383C")) %>% #select the least variable genes
+  select(c("YOR382W", "YOR383C")) %>% #select FIT2 and FIT3 genes
   cbind(df[5848:5850]) %>% #keep metadata as well
   ggplot(aes(x = YOR382W,
              y = YOR383C)) +
   geom_point()
+
+```
+
+# TSA1 gene
+
+Plot mean and residuals
+
+```{r}
+#plot mean expr and residual
+stats_list %>%
+  map(~ filter(.x, genes %in% "YML028W")) %>%
+  map2(names(stats_list), ~.x %>% 
+         mutate(Time_Point = .y,
+                Time_Point = as.numeric(Time_Point))) %>% #add time column
+  bind_rows() %>%
+  select(c("common_name", "mean", "residuals", "Time_Point")) %>%
+  melt(id = c("common_name", "Time_Point")) %>%
+  ggplot(aes(x = Time_Point, #plot
+             y = value)) +
+  geom_point() +
+    scale_x_continuous(breaks = seq(from = 0,
+                                  to = 90,
+                                  by = 6)) +
+  expand_limits(x = 0, y = 0) +
+  facet_wrap( ~ variable, 
+             scales = "free", 
+             ncol = 2)
+
+```
+
+Plot gene counts
+
+```{r}
+df %>%
+  select(c("YML028W", "time_interval")) %>% #select the interesting genes
+  ggplot(aes(x = time_interval,
+             y = YML028W)) +
+  geom_violin()
 
 ```
 
@@ -515,9 +552,9 @@ If a gene has high or low expression in a cell, do other genes have the same exp
 ```{r}
 #prep the df to work on
 tmp <- stats_list %>%
-  map(~ filter(.x, mean < 3)) %>% #keep genes with low counts
+  map(~ filter(.x, mean < 4)) %>% #keep genes with low counts
   map(~ filter(.x, #keep genes with high rank
-               genes %in% unique(grep(paste(rank_combine$genes[1:200],
+               genes %in% unique(grep(paste(rank_combine$genes[1:500],
                                             collapse="|"),
                                             genes,
                                             value = T))))
