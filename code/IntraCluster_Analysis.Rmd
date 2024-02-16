@@ -237,15 +237,15 @@ stats_list %>%
 First only keep genes common in all time points, then rank the genes in each time bin based on residuals. The lowest rank is assigned to the lowest variable gene in that time bin. Then the ranks for each gene in each time bin are summed together - then extract the genes that rank the highest. These are the genes with the highest variability. Finally we also extract the genes that rank the lowest, which are genes with lowest variability.
 
 ```{r, warning=FALSE, message=FALSE}
-#find genes common in all timepoints
-common_genes <- Reduce(intersect, 
-                       lapply(stats_list, 
-                              function(x) {x$genes}))
+
 #calculate rank
 rank_combine <- 
   stats_list %>%
   map(~.x %>%
-        filter(genes %in% common_genes) %>% #only keep genes in all timepoints
+        filter(genes %in% Reduce(intersect, #only keep genes in all timepoints
+                                 lapply(stats_list, 
+                                        function(x) {
+                                          x$genes}))) %>% 
         drop_na() %>%
         mutate(rank = rank(residuals)) %>% #rank based on non-adjusted residuals
         select(c("genes", "common_name", "rank", "description"))) %>%
@@ -257,16 +257,15 @@ rank_combine <-
   summarise(rank_combined = sum(rank)) %>%
   arrange(desc(rank_combined)) #arrange from highest to lowest
 
-rm(common_genes)
 write.csv2(rank_combine, "../results/04_RankCombine.csv", row.names = F)
 
 ```
 
-# Most variable genes
+# Plot most variable genes
 
 Extract the most variable genes and plot their mean and residuals. Then do a violin plot of their counts over time. 
 
-## Plot genes with the highest ranks - so most variable
+## Plot mean and residuals for genes with the highest ranks (most variable genes)
 
 ```{r, fig.height=60, fig.width=7}
 genes_to_plot <- as.character(rank_combine$genes)[3:22] #skips 2 ribosomial genes
@@ -326,6 +325,8 @@ df %>%
 
 # Plot the least variable genes
 
+## Plot mean and residuals for genes with the lowest ranks (least variable genes)
+
 ```{r, fig.height=60, fig.width=7}
 genes_to_plot <- as.character(tail(rank_combine$genes, n = 20))
 
@@ -382,9 +383,10 @@ df %>%
 
 ```
 
-# Have some high variability genes next to some low variability genes
+# Plot high variability genes next to low variability genes
 
-Trying to plot high variability next to low variability, I noticed that the low variability are generally on way lower scales/counts. 
+Trying to plot high variability next to low variability, I noticed that the low variability are generally on way lower scales/counts.
+The goal of this is to visualize how gene counts are distributed for high vs low variability genes.
 
 ```{r, fig.height=12, fig.width=15}
 df %>%
@@ -418,6 +420,4 @@ df %>%
              ncol = 2)
 
 ```
-
-
 
