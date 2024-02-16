@@ -388,7 +388,7 @@ df %>%
 Trying to plot high variability next to low variability, I noticed that the low variability are generally on way lower scales/counts.
 The goal of this is to visualize how gene counts are distributed for high vs low variability genes.
 
-```{r, fig.height=12, fig.width=15}
+```{r, fig.height=10, fig.width=10}
 df %>%
   select(c("YOR383C",  #high var
            "YOR234C", #low var
@@ -505,6 +505,62 @@ df %>%
   ggplot(aes(x = YOR382W,
              y = YOR383C)) +
   geom_point()
+
+```
+
+# Do some of the low mean high residuals genes correlate?
+
+If a gene has high or low expression in a cell, do other genes have the same expression pattern?
+
+```{r}
+#prep the df to work on
+tmp <- stats_list %>%
+  map(~ filter(.x, mean < 3)) %>% #keep genes with low counts
+  map(~ filter(.x, #keep genes with high rank
+               genes %in% unique(grep(paste(rank_combine$genes[1:200],
+                                            collapse="|"),
+                                            genes,
+                                            value = T))))
+
+common_genes <- Reduce(intersect, #get genes present in all timebins 
+                       lapply(tmp, 
+                              function(x) {x$genes}))
+
+tmp <- df %>%
+  select(c(all_of(common_genes)))
+
+#load function to calculate R-squared
+calc_r_sq <- function(x, y) {
+  lm_model <- lm(y ~ x)
+  summary(lm_model)$r.squared
+}
+
+#create matrix to store R-squared values
+rsq_matrix <- matrix(NA, 
+                     nrow = ncol(tmp), 
+                     ncol = ncol(tmp))
+
+# Loop through combinations of columns and calculate R-squared
+for (i in 1:(ncol(tmp) -1)) {
+  for (j in (i + 1):ncol(tmp)) {
+    rsq_matrix[i, j] <- calc_r_sq(tmp[[i]], tmp[[j]])
+  }
+}
+
+#assign col and row manes to matrix
+colnames(rsq_matrix) <- common_genes
+rownames(rsq_matrix) <- common_genes
+
+rsq_matrix <- rsq_matrix %>%
+  as.data.frame %>%
+  rownames_to_column(var = 'var1') %>%
+  gather(var2, value, -var1) %>%
+  drop_na(value) %>%
+  mutate(value = value*100,
+         value = round(value, 2)) %>% #express R sequared as %
+  arrange(desc(value))
+
+head(rsq_matrix, 10)
 
 ```
 
