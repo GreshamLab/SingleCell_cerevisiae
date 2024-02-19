@@ -114,6 +114,8 @@ In some timepoints I have a very low number of cells - still continuing with the
 
 # Discard bins with not enough cells
 
+## Remove bins that do not contain enough cells 
+
 Since some bins do not have enough cells to make a proper reliable linear model to calculate residuals, I remove those bins from the analysis.
 
 ```{r}
@@ -131,7 +133,7 @@ rm(X)
 
 ```
 
-Check which bins have been removed
+## Check which bins have been removed
 
 ```{r}
 for (i in 1:length(df)){
@@ -144,6 +146,8 @@ for (i in 1:length(df)){
 ```
 
 # Intra cluster for each timepoint
+
+## Perform intracluster analysis 
 
 ```{r}
 intracluster_output <- list()
@@ -251,6 +255,22 @@ for (j in 1:length(df)) {
   }
 
 rm(list=ls(pattern="^tmp"))
+
+```
+
+## Scale rank across sampling points
+
+Some samples do not have all the timebins - therefore the maximum or minimum possible rank is different than the ones that have more bins. To correct for this, scale the rank so that all the ranks are in the same interval
+
+```{r}
+scale_values <- function(x){
+  (x-min(x))/(max(x)-min(x))
+  }
+
+for (i in 1:length(intracluster_output)) {
+  intracluster_output[[i]]$rank$rank_combined <-
+    scale_values(intracluster_output[[i]]$rank$rank_combined)
+}
 
 ```
 
