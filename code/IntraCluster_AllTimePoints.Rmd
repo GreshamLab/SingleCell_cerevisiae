@@ -65,11 +65,11 @@ Divide cells into 3 minutes bins and transform df into list
 ```{r}
 df <- cbind(rawdata, metadata) #merge data and metadata
 
-#merge timepoints 1 and 2 since they are both before treatment
-df$Pool<- str_replace(df$Pool, "1", "2") #assing timepoint 1 to 2
-df$Pool<- str_replace(df$Pool, "3", "4")
-df$Pool<- str_replace(df$Pool, "5", "6")
-df$Pool<- str_replace(df$Pool, "7", "8")
+#merge timepoints 2 by 2 to get enough cells in each bin
+df$Pool <- str_replace_all(df$Pool, c("1" = "2", 
+                                      "3" = "4", 
+                                      "5" = "6", 
+                                      "7" = "8"))
 
 df <- df %>%
   filter(Gene %in% "WT") %>% #only wt strain
@@ -110,7 +110,38 @@ for (i in 1:length(df)) {
 
 ```
 
-ISSUE HERE: in some timepoints I have a very low number of cells - still continuing with the code but this should be discussed and need to be aware of it.
+In some timepoints I have a very low number of cells - still continuing with the code but this should be discussed and need to be aware of it.
+
+# Discard bins with not enough cells
+
+Since some bins do not have enough cells to make a proper reliable linear model to calculate residuals, I remove those bins from the analysis.
+
+```{r}
+#get the mininum amount of cells in timeponts 1 and 2
+X <- as.numeric(min(table(df$`2`$time_interval)))
+
+df <- df %>%
+  map(~.x %>%
+        group_by(time_interval) %>%
+        filter(n() >= X) %>%
+        droplevels() %>%
+        ungroup())
+
+rm(X)
+
+```
+
+Check which bins have been removed
+
+```{r}
+for (i in 1:length(df)){
+  print(paste0("Bins removed in timepoint", 
+               names(df)[i],
+               ":"))
+  print(setdiff(levels(df$`2`$time_interval),
+                       levels(df[[i]]$time_interval)))
+}
+```
 
 # Intra cluster for each timepoint
 
@@ -256,7 +287,4 @@ toplot %>%
   #facet_wrap(~ gene, ncol=3, scales = "free")
   
 ```
-
-
-
 
