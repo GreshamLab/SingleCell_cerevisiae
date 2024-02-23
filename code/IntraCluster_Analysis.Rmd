@@ -24,6 +24,7 @@ library(ggpubr)
 library(biomaRt)
 library(readxl)
 library(conflicted)
+library(ggExtra)
 
 #Solve conflicts
 conflict_prefer("select", "dplyr")
@@ -493,19 +494,56 @@ df %>%
 
 ```
 
-## Plot FIT2 vs FIT3
+# Plot FIT2 vs FIT3
+
+## Plot FIT2 and FIT3 gene counts on linear and log scale
 
 Fit2 and Fit3 are interesting genes, try to plot their counts against each other to see if they correlate
 
-```{r}
+
+```{r, fig.show='hold'}
+#plot on linear scale
 df %>%
   select(c("YOR382W", "YOR383C")) %>% #select FIT2 and FIT3 genes
   cbind(df[5848:5850]) %>% #keep metadata as well
   ggplot(aes(x = YOR382W,
              y = YOR383C)) +
+  xlab("FIT2") +
+  ylab("FIT3") +
+  ggtitle("Linear Scale") +
+  geom_point()
+
+#plot on log scale
+df %>%
+  select(c("YOR382W", "YOR383C")) %>% #select FIT2 and FIT3 genes
+  cbind(df[5848:5850]) %>% #keep metadata as well
+  ggplot(aes(x = log10(YOR382W),
+             y = log10(YOR383C))) +
+  xlab("FIT2") +
+  ylab("FIT3") +
+  ggtitle("Log10 Scale") +
   geom_point()
 
 ```
+
+## Do marginal distribution plot
+
+```{r, fig.keep='last', warning=FALSE}
+tmp <- df %>%
+  select(c("YOR382W", "YOR383C")) %>% #select FIT2 and FIT3 genes
+  cbind(df[5848:5850]) %>% #keep metadata as well
+  ggplot(aes(x = log10(YOR382W),
+             y = log10(YOR383C))) +
+  xlab("FIT2") +
+  ylab("FIT3") +
+  ggtitle("Log10 Scale") +
+  geom_point()
+
+ggMarginal(tmp, type = "densigram")
+
+```
+
+## Check if they fit negative binomial distribution
 
 # TSA1 gene
 
