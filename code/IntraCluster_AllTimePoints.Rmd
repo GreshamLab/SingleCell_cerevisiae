@@ -19,7 +19,7 @@ knit: (function(inputFile, encoding) {
 ```{r, results='hide', message=FALSE}
 #Load packages from CRAN
 library(tidyverse)
-library(reshape2)
+#library(reshape2)
 library(ggpubr)
 library(biomaRt)
 library(readxl)
@@ -313,5 +313,11 @@ for (i in 1:length(intracluster_output)) {
   )
 
 }
+```
+# Export data
+
+```{r}
+saveRDS(intracluster_output,
+        file = "../results/intracluster_analysis_output.Rds")
 ```
 
