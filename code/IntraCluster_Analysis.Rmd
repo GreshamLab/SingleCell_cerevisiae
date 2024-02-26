@@ -642,6 +642,8 @@ df %>%
 
 ## Do marginal distribution plot
 
+The zeros make it clear that your data is not negative binomial. The distribution of the log pseudocount plot (log x+1) is a mixture of at least two underlying distributions, because it is not consistent with a single negative binomial distribution. And that mixture argues for heterogeneity, because there's at least two different populations of things with differing underlying properties
+
 ```{r, fig.keep='last', warning=FALSE}
 tmp <- df %>%
   select(c("YOR382W", "YOR383C")) %>% #select FIT2 and FIT3 genes
