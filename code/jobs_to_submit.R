@@ -6,7 +6,8 @@ files <- c(
   "Bootstrapping.Rmd",
   "Cluster_Cells.Rmd",
   "IntraCluster_Analysis.Rmd",
-  "IntraCluster_AllTimePoints.Rmd"
+  "IntraCluster_AllTimePoints.Rmd",
+  "Barseq_Variance.Rmd
   )
 
 if (!dir.exists("../results/")){dir.create("../results/")}

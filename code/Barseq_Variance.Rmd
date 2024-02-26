@@ -1,0 +1,98 @@
+---
+title: "06_Barseq_Variance"
+author: "Simone Zaghen"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    toc: true
+    number_section: true
+    toc_float: 
+      collapsed: false
+      smooth_scroll: true
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "../results/") })
+
+---
+
+# Load packages
+
+```{r, results='hide', message=FALSE}
+library(tidyverse)
+library(readxl)
+library(kableExtra)
+
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+# Load data
+
+```{r}
+intracluster_output <- readRDS("../results/intracluster_analysis_output.Rds")
+barseq <- read_delim("../data/barcode_seq_240223", col_types = cols())
+
+```
+
+# Check gene list from barcode sequencing data
+
+```{r}
+#extract interesting genes from barseq data
+genes_to_plot <- barseq %>%
+  filter(time_48h > 6 &
+         time_72h > 6) %>%
+  pull(genes)
+
+#extract the stats of scRNAseq with barseq genes
+barseq_stats <- list()
+for (i in 1:length(intracluster_output)) {
+  tmp <- intracluster_output[[i]]$stats %>%
+    merge(intracluster_output[[i]]$rank) %>%
+    filter(genes %in% genes_to_plot) %>%
+    arrange(desc(rank_combined))
+  barseq_stats[[i]] <- tmp
+}
+names(barseq_stats) <- names(intracluster_output)
+
+```
+
+```{r, fig.width=8, fig.height=12}
+toplot <- barseq_stats %>%
+    map2(names(barseq_stats), ~.x %>% 
+           mutate(time_bin = .y,
+                  time_bin = as.numeric(time_bin))) %>% #add time bin col
+    bind_rows() %>%
+    mutate(gene = paste(common_name, genes, sep = "|")) %>% #use both genes names
+    mutate(gene = factor(gene, levels = unique(gene))) %>% #convert to levels
+    ungroup() %>%
+    select(c("rank_combined","time_bin", "gene"))
+
+toplot %>% 
+    ggplot(aes(x = time_bin,
+               y = rank_combined,
+               color = gene
+               )) + 
+    geom_line(linewidth = 2) + 
+    ylim(0,max(toplot$rank_combined)) +
+    xlab("Sampling Point") +
+    theme(legend.position = "none") +
+    facet_wrap(~ gene, ncol = 5)
+
+```
+
+# Table with those genes and their infos and stats
+
+```{r, results='asis'}
+for (i in 1:length(barseq_stats)) {
+  print(paste("Sampling point ", names(barseq_stats)[i]))
+  cat("\n")
+  
+  print(barseq_stats[[i]] %>% 
+          kable %>%
+          kable_styling("striped", full_width = T) %>% 
+          scroll_box(height = "500px"))
+cat("\n")
+
+}
+
+```
+
