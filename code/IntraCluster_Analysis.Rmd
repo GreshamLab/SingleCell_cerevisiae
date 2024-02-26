@@ -25,6 +25,7 @@ library(biomaRt)
 library(readxl)
 library(conflicted)
 library(ggExtra, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
+library(kableExtra)
 
 #Solve conflicts
 conflict_prefer("select", "dplyr")
@@ -595,9 +596,15 @@ Get top 10 correlated genes
 ```{r}
 head(rsq_matrix, 10)
 
+common_genes <- union(rsq_matrix$var1[1:10], 
+                      rsq_matrix$var2[1:10])
+
 gen_des %>%
-  filter(genes %in% common_genes[10]) %>%
-  relocate("genes", "common_name", "description")
+  filter(genes %in% common_genes) %>%
+  relocate("genes", "common_name", "description") %>% 
+  kable %>%
+  kable_styling("striped", full_width = T) %>% 
+  scroll_box(height = "1000px")
 
 ```
 
@@ -639,8 +646,8 @@ df %>%
 tmp <- df %>%
   select(c("YOR382W", "YOR383C")) %>% #select FIT2 and FIT3 genes
   cbind(df[5848:5850]) %>% #keep metadata as well
-  ggplot(aes(x = log10(YOR382W),
-             y = log10(YOR383C))) +
+  ggplot(aes(x = log10(YOR382W+1),
+             y = log10(YOR383C+1))) +
   xlab("FIT2") +
   ylab("FIT3") +
   ggtitle("Log10 Scale") +
