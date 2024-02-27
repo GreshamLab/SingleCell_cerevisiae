@@ -246,9 +246,9 @@ for (j in 1:length(df)) {
     
   #Save results in main list
   intracluster_output[[names(df)[[j]]]] <- list(
-    model = tmp_model,
-    stats = tmp_stats,
-    plot = tmp_plot,
+    model = tmp_model_list,
+    stats = tmp_stats_list,
+    plot = tmp_plot_list,
     rank = tmp_rank_combine)
   
   }
@@ -314,6 +314,7 @@ for (i in 1:length(intracluster_output)) {
 
 }
 ```
+
 # Export data
 
 ```{r}
