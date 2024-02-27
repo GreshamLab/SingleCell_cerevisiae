@@ -27,9 +27,40 @@ options(dplyr.summarise.inform = FALSE)
 
 # Load data
 
-```{r}
+```{r, results='hide', message=FALSE}
+rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
+metadata <- read_tsv("../data/Cell_Cycle_Metadata_01112024.tsv.gz") #cell cycle data
 intracluster_output <- readRDS("../results/intracluster_analysis_output.Rds")
 barseq <- read_delim("../data/barcode_seq_240223", col_types = cols())
+
+```
+
+# Data wrangling 
+
+```{r}
+counts <- cbind(rawdata, metadata) #merge data and metadata
+
+#merge timepoints 2 by 2 to get enough cells in each bin
+counts$Pool <- str_replace_all(counts$Pool, c("1" = "2",
+                                              "3" = "4", 
+                                              "5" = "6", 
+                                              "7" = "8"))
+
+counts <- counts %>%
+  filter(Gene %in% "WT") %>% #only wt strain
+  drop_na() %>% #remove empty levels
+  mutate(max = max(Cell_Cycle_Time), #divide cells in time bins
+         min = min(Cell_Cycle_Time),
+         width = (max-min)/30,
+         bin1 = ceiling((Cell_Cycle_Time - min)/width),
+         time_interval = ifelse(Cell_Cycle_Time == min, 
+                                bin1 + 1, 
+                                bin1),
+         time_interval = time_interval * 3) %>% #each bin should reflect minutes
+  select(-c("max", "min", "width", "bin1")) %>%
+  mutate(time_interval = factor(time_interval))
+
+counts[1:5843] <- counts[1:5843]*10000/rowSums(counts[1:5843]) #normalize df
 
 ```
 
@@ -43,36 +74,31 @@ genes_to_plot <- barseq %>%
   pull(genes)
 
 #extract the stats of scRNAseq with barseq genes
-barseq_stats <- list()
-for (i in 1:length(intracluster_output)) {
-  tmp <- intracluster_output[[i]]$stats %>%
-    merge(intracluster_output[[i]]$rank) %>%
-    filter(genes %in% genes_to_plot) %>%
-    arrange(desc(rank_combined))
-  barseq_stats[[i]] <- tmp
-}
-names(barseq_stats) <- names(intracluster_output)
+rank_barseq <- intracluster_output %>%
+  map(~ pluck(.x, "rank")) %>% #extract nested list
+  map2(names(intracluster_output), ~.x %>% #add col with sampling point
+         mutate(sampling_point = as.numeric(.y))) %>%
+  map(~ filter(.x, genes %in% genes_to_plot))
+
+rm(genes_to_plot)
 
 ```
 
+# Plot the rank over sampling points of the barseq genes
+
 ```{r, fig.width=8, fig.height=12}
-toplot <- barseq_stats %>%
-    map2(names(barseq_stats), ~.x %>% 
-           mutate(time_bin = .y,
-                  time_bin = as.numeric(time_bin))) %>% #add time bin col
+rank_barseq %>%
     bind_rows() %>%
     mutate(gene = paste(common_name, genes, sep = "|")) %>% #use both genes names
     mutate(gene = factor(gene, levels = unique(gene))) %>% #convert to levels
     ungroup() %>%
-    select(c("rank_combined","time_bin", "gene"))
-
-toplot %>% 
-    ggplot(aes(x = time_bin,
+    select(c("rank_combined","sampling_point", "gene")) %>% 
+    ggplot(aes(x = sampling_point,
                y = rank_combined,
                color = gene
                )) + 
     geom_line(linewidth = 2) + 
-    ylim(0,max(toplot$rank_combined)) +
+    ylim(0,1) +
     xlab("Sampling Point") +
     theme(legend.position = "none") +
     facet_wrap(~ gene, ncol = 5)
@@ -82,11 +108,15 @@ toplot %>%
 # Table with those genes and their infos and stats
 
 ```{r, results='asis'}
-for (i in 1:length(barseq_stats)) {
-  print(paste("Sampling point ", names(barseq_stats)[i]))
+
+for (i in 1:length(rank_barseq)) {
+  print(paste("Sampling point ", names(rank_barseq)[i]))
   cat("\n")
   
-  print(barseq_stats[[i]] %>% 
+  print(rank_barseq[[i]] %>% 
+          select(c("genes","common_name","rank_combined", "description")) %>% 
+          merge(barseq %>% select(-c("common_name"))) %>%
+          relocate(description, .after = time_72h) %>%
           kable %>%
           kable_styling("striped", full_width = T) %>% 
           scroll_box(height = "500px"))
@@ -95,4 +125,92 @@ cat("\n")
 }
 
 ```
+
+# Plot PDR5, ERG11, FLR1
+
+Un-nest the nested list
+
+```{r, eval=FALSE}
+stats_barseq <- intracluster_output %>%
+  map(~pluck(.x, "stats"))
+
+for (i in 1:length(stats_barseq)) {
+  tmp <- stats_barseq[[i]] %>% 
+    map2(names(stats_barseq[[i]]), 
+         ~ .x %>% 
+           mutate(time = .y)) %>%
+    bind_rows()
+stats_barseq[[i]] <- tmp
+}
+
+stats_barseq <- stats_barseq %>%
+  map(~filter(.x,
+              common_name %in% c("PDR5",
+                                  "ERG11",
+                                  "FLR1"))) %>%
+  map2(names(stats_barseq),
+       ~.x %>%
+         mutate(sampling_point = .y)) %>%
+  bind_rows() %>%
+  mutate(time = as.numeric(time))
+
+rm(tmp)
+
+```
+
+## Plot mean expr and residuals of PDR5, ERG11, FLR1
+
+
+```{r, fig.height=8, fig.width=8}
+genes_to_plot <- c("PDR5", "ERG11", "FLR1")
+
+for (i in 1:length(genes_to_plot)) {
+  print(stats_barseq %>%
+    filter(common_name %in% genes_to_plot[i]) %>%
+    select(c("common_name", "mean", "residuals", "time", "sampling_point")) %>%
+    mutate(sampling_point = paste0("Sampling_point_", sampling_point)) %>%
+    pivot_longer(cols = c("mean", "residuals"),
+                 names_to = "variable",
+                 values_to = "value") %>%
+    ggplot(aes(x = time, #plot
+               y = value)) +
+    geom_point() +
+    ggtitle(genes_to_plot[i]) +
+    expand_limits(x = 0, y = 0) +
+    scale_x_continuous(breaks = seq(from = 0,
+                                    to = 90,
+                                    by = 6)) +
+    facet_wrap(sampling_point ~ variable, 
+               scales = "free", 
+               ncol = 2))
+}
+
+```
+
+## Violing plot of PDR5, ERG11, FLR1 counts in each sampling point
+
+```{r, fig.height=8, fig.width=8}
+counts %>%
+  select(c("YOR153W", "YHR007C", "YBR008C","Pool")) %>%
+  rename(PDR5 = "YOR153W", 
+         ERG11 = "YHR007C", 
+         FLR1 = "YBR008C") %>%
+  pivot_longer(cols = !Pool,
+               names_to = "gene",
+               values_to = "counts") %>%
+  ggplot(aes(x = Pool,
+             y = counts)) +
+  geom_violin() +
+    facet_wrap(~ gene,
+             scales = "free",
+             ncol = 1)
+```
+
+
+
+
+
+
+
+
 
