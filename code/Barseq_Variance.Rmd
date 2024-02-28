@@ -90,9 +90,9 @@ rm(genes_to_plot)
 rank_barseq %>%
     bind_rows() %>%
     mutate(gene = paste(common_name, genes, sep = "|")) %>% #use both genes names
-    mutate(gene = factor(gene, levels = unique(gene))) %>% #convert to levels
     ungroup() %>%
     select(c("rank_combined","sampling_point", "gene")) %>% 
+    mutate(gene = fct_reorder(gene, rank_combined, .desc = T)) %>%
     ggplot(aes(x = sampling_point,
                y = rank_combined,
                color = gene
@@ -117,6 +117,7 @@ for (i in 1:length(rank_barseq)) {
           select(c("genes","common_name","rank_combined", "description")) %>% 
           merge(barseq %>% select(-c("common_name"))) %>%
           relocate(description, .after = time_72h) %>%
+          arrange(desc(rank_combined)) %>%
           kable %>%
           kable_styling("striped", full_width = T) %>% 
           scroll_box(height = "500px"))
@@ -130,7 +131,7 @@ cat("\n")
 
 Un-nest the nested list
 
-```{r, eval=FALSE}
+```{r }
 stats_barseq <- intracluster_output %>%
   map(~pluck(.x, "stats"))
 
@@ -160,7 +161,6 @@ rm(tmp)
 
 ## Plot mean expr and residuals of PDR5, ERG11, FLR1
 
-
 ```{r, fig.height=8, fig.width=8}
 genes_to_plot <- c("PDR5", "ERG11", "FLR1")
 
@@ -189,7 +189,7 @@ for (i in 1:length(genes_to_plot)) {
 
 ## Violing plot of PDR5, ERG11, FLR1 counts in each sampling point
 
-```{r, fig.height=8, fig.width=8}
+```{r, fig.height=8, fig.width=8, fig.show='hold', warning=FALSE}
 counts %>%
   select(c("YOR153W", "YHR007C", "YBR008C","Pool")) %>%
   rename(PDR5 = "YOR153W", 
@@ -201,16 +201,26 @@ counts %>%
   ggplot(aes(x = Pool,
              y = counts)) +
   geom_violin() +
+  ggtitle("Linear Scale") +
     facet_wrap(~ gene,
              scales = "free",
              ncol = 1)
+
+counts %>%
+  select(c("YOR153W", "YHR007C", "YBR008C","Pool")) %>%
+  rename(PDR5 = "YOR153W", 
+         ERG11 = "YHR007C", 
+         FLR1 = "YBR008C") %>%
+  pivot_longer(cols = !Pool,
+               names_to = "gene",
+               values_to = "counts") %>%
+  ggplot(aes(x = Pool,
+             y = log10(counts))) +
+  geom_violin() +
+  ggtitle("Log Scale") +
+    facet_wrap(~ gene,
+             scales = "free",
+             ncol = 1)
+
 ```
-
-
-
-
-
-
-
-
 
