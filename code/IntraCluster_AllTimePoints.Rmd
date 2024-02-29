@@ -19,7 +19,6 @@ knit: (function(inputFile, encoding) {
 ```{r, results='hide', message=FALSE}
 #Load packages from CRAN
 library(tidyverse)
-#library(reshape2)
 library(ggpubr)
 library(biomaRt)
 library(readxl)

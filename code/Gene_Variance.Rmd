@@ -19,12 +19,12 @@ knit: (function(inputFile, encoding) {
 ```{r, results='hide', message=FALSE}
 #Load packages from bioconductor
 library(biomaRt)
-library(clusterProfiler)
-library(pathview)
-library(enrichplot)
+library(clusterProfiler, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
+library(pathview, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
+library(enrichplot, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
 
 #Install genome wide annotation for Yeast
-library(org.Sc.sgd.db)
+library(org.Sc.sgd.db, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
 
 #Install and load packages from CRAN
 library(tidyverse)
