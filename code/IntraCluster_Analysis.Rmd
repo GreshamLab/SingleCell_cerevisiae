@@ -538,6 +538,25 @@ df %>%
 
 ```
 
+And do a marginal plot
+
+```{r, fig.keep='last', warning=FALSE}
+tmp <- df %>%
+  select(c("YML100W", "YMR261C")) %>% #select FIT2 and FIT3 genes
+  rename(TSL1_YML100W = YML100W,
+         TPS3_YMR261C = YMR261C) %>%
+  cbind(df[5848:5850]) %>% #keep metadata as well
+  ggplot(aes(x = log10(TSL1_YML100W+1),
+             y = log10(TPS3_YMR261C+1))) +
+  xlab("TSL1_YML100W") +
+  ylab("TPS3_YMR261C") +
+  ggtitle("Log10 Scale") +
+  geom_point()
+
+ggMarginal(tmp, type = "densigram")
+
+```
+
 # Do some of the low mean high residuals genes correlate?
 
 If a gene has high or low expression in a cell, do other genes have the same expression pattern?
@@ -545,7 +564,7 @@ If a gene has high or low expression in a cell, do other genes have the same exp
 ```{r}
 #prep the df to work on
 tmp <- stats_list %>%
-  map(~ filter(.x, mean < 4)) %>% #keep genes with low counts
+  map(~ filter(.x, mean < 2)) %>% #keep genes with low counts
   map(~ filter(.x, #keep genes with high rank
                genes %in% unique(grep(paste(rank_combine$genes[1:500],
                                             collapse="|"),
@@ -581,24 +600,29 @@ for (i in 1:(ncol(tmp) - 1)) {
 colnames(rsq_matrix) <- common_genes
 rownames(rsq_matrix) <- common_genes
 
-rsq_matrix <- rsq_matrix %>%
-  as.data.frame %>%
-  rownames_to_column(var = 'var1') %>%
-  gather(var2, value, -var1) %>%
-  drop_na(value) %>%
-  mutate(value = value*100,
-         value = round(value, 2)) %>% #express R sequared as %
-  arrange(desc(value))
+# make matrix symmetric 
+rsq_matrix[lower.tri(rsq_matrix)] = t(rsq_matrix)[lower.tri(rsq_matrix)]
+diag(rsq_matrix) <- 1
 
 ```
 
 Get top 10 correlated genes
 
 ```{r}
-head(rsq_matrix, 10)
+tmp <- rsq_matrix %>%
+  as.data.frame %>%
+  rownames_to_column(var = 'var1') %>%
+  gather(var2, value, -var1) %>%
+  drop_na(value) %>%
+  mutate(value = value*100,
+         value = round(value, 2)) %>% #express R sequared as %
+  filter(value < 100) %>% #remove the genes matching with themselves
+  arrange(desc(value))
 
-common_genes <- union(rsq_matrix$var1[1:10], 
-                      rsq_matrix$var2[1:10])
+head(tmp, 10)
+
+common_genes <- union(tmp$var1[1:10], 
+                      tmp$var2[1:10])
 
 gen_des %>%
   filter(genes %in% common_genes) %>%
@@ -609,11 +633,22 @@ gen_des %>%
 
 ```
 
+Do clustering on the matrix
+
+```{r}
+tmp <- as.dist(1 - rsq_matrix)
+tmp <- hclust(tmp, method="complete")
+plot(tmp)
+
+```
+
 # Plot FIT2 vs FIT3
 
 ## Plot FIT2 and FIT3 gene counts on linear and log scale
 
-Fit2 and Fit3 are interesting genes, try to plot their counts against each other to see if they correlate
+Fit2 and Fit3 are interesting genes, try to plot their counts against each other to see if they correlate.
+There is no significant sequence similarity between FIT2 and FIT3.
+The two genes are facing each other on the genome.
 
 
 ```{r, fig.show='hold'}
