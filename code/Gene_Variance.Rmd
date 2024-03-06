@@ -291,8 +291,7 @@ Download the *S. cerevisiae* dataset from Ensembl and retain gene name, gene des
 
 ```{r}
 ensembl <- useMart(biomart = "ENSEMBL_MART_ENSEMBL",
-                   dataset = "scerevisiae_gene_ensembl",
-                   host = "https://Jul2018.archive.ensembl.org") 
+                   dataset = "scerevisiae_gene_ensembl") 
 
 gen_des <- getBM(attributes = c("ensembl_gene_id",
                                 "description",

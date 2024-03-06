@@ -26,6 +26,7 @@ library(readxl)
 library(conflicted)
 library(ggExtra, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
 library(kableExtra)
+library(tidyheatmaps, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
 
 #Solve conflicts
 conflict_prefer("select", "dplyr")
@@ -431,7 +432,7 @@ The most interesting genes are those with a very low mean, so overall low expres
 
 ```{r, fig.height=60, fig.width=10}
 tmp <- stats_list %>%
-  map(~ filter(.x, mean < 2)) %>% #keep genes with low counts
+  map(~ filter(.x, mean < 1)) %>% #keep genes with low counts
   map(~ filter(.x, #keep genes with high rank
                genes %in% unique(grep(paste(rank_combine$genes[1:100],
                                             collapse="|"),
@@ -600,25 +601,31 @@ for (i in 1:(ncol(tmp) - 1)) {
 colnames(rsq_matrix) <- common_genes
 rownames(rsq_matrix) <- common_genes
 
-# make matrix symmetric 
-rsq_matrix[lower.tri(rsq_matrix)] = t(rsq_matrix)[lower.tri(rsq_matrix)]
-diag(rsq_matrix) <- 1
-
 ```
-
-Get top 10 correlated genes
 
 ```{r}
 tmp <- rsq_matrix %>%
   as.data.frame %>%
   rownames_to_column(var = 'var1') %>%
   gather(var2, value, -var1) %>%
+  mutate(value = round(value, 4)) %>% #express R sequared as %
+  filter(value < 1,
+         value > 0.02) %>% #remove the genes matching with themselves
   drop_na(value) %>%
-  mutate(value = value*100,
-         value = round(value, 2)) %>% #express R sequared as %
-  filter(value < 100) %>% #remove the genes matching with themselves
   arrange(desc(value))
 
+ggplot(tmp,
+       aes(x = var1, 
+           y = var2,
+           fill = value)) +
+  geom_tile() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+Get top 10 correlated genes
+
+```{r}
 head(tmp, 10)
 
 common_genes <- union(tmp$var1[1:10], 
@@ -629,16 +636,7 @@ gen_des %>%
   relocate("genes", "common_name", "description") %>% 
   kable %>%
   kable_styling("striped", full_width = T) %>% 
-  scroll_box(height = "1000px")
-
-```
-
-Do clustering on the matrix
-
-```{r}
-tmp <- as.dist(1 - rsq_matrix)
-tmp <- hclust(tmp, method="complete")
-plot(tmp)
+  scroll_box(height = "400px")
 
 ```
 
