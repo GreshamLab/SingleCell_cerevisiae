@@ -19,13 +19,6 @@ The idea is to assign time and cell cycle to cells and then look at the variance
 
 ```{r, results='hide', message=FALSE}
 library(tidyverse)
-library(conflicted)
-
-#Solve conflicts
-conflict_prefer("select", "dplyr", quiet = T)
-conflict_prefer("mutate", "dplyr", quiet = T)
-conflict_prefer("summarize", "dplyr", quiet = T)
-conflict_prefer("filter", "dplyr", quiet = T)
 
 #create folders
 if (!dir.exists("../results/Bootstrapping")){dir.create("../results/Bootstrapping/")}

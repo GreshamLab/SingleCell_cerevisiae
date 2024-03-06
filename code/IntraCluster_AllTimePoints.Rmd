@@ -24,12 +24,6 @@ library(biomaRt)
 library(readxl)
 library(conflicted)
 
-#Solve conflicts
-conflict_prefer("select", "dplyr")
-conflict_prefer("filter", "dplyr")
-conflict_prefer("rename", "dplyr")
-conflict_prefer("intersect", "base")
-
 options(dplyr.summarise.inform = FALSE)
 
 ```
