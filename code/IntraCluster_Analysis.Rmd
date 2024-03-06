@@ -25,6 +25,7 @@ library(biomaRt)
 library(readxl)
 library(conflicted)
 library(ggExtra, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
+library(knitr)
 library(kableExtra)
 library(tidyheatmaps, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
 
@@ -170,6 +171,8 @@ rm(list=ls(pattern="^tmp"))
 
 ```
 
+Plot the regression lines 
+
 ```{r, fig.height=24, fig.width=12}
 ggarrange(plotlist = plot_list, ncol=3, nrow =10)
 
@@ -179,7 +182,7 @@ ggarrange(plotlist = plot_list, ncol=3, nrow =10)
 
 As a sanity check, plot the both the non-adjusted and the adjusted residuals of cell cycle genes. Their residuals should be very low since cells are clustered based on time. In the past we used adjusted residuals, but we decided not to use them here for further plots because when the mean is very low, the adj_res become very high and they 'overpower' more interesting genes with higher residuals. We still calculate them here to quickly compare them with the non-adjusted residuals. 
 
-NB: y scales are different!
+**y scales are different!**
 
 ```{r, fig.height=40, fig.width=10}
 #import cell cycle annotated genes provided by Chris
@@ -267,8 +270,9 @@ write.csv2(rank_combine, "../results/04_RankCombine.csv", row.names = F)
 # Plot most variable genes
 
 Extract the most variable genes and plot their mean and residuals. Then do a violin plot of their counts over time. 
-
-## Plot mean and residuals for genes with the highest ranks (most variable genes)
+\
+**Plot mean and residuals for genes with the highest ranks (most variable genes)**
+\
 
 ```{r, fig.height=60, fig.width=7}
 genes_to_plot <- as.character(rank_combine$genes)[3:22] #skips 2 ribosomial genes
@@ -303,7 +307,9 @@ stats_list %>%
 
 ```
 
-## Do violon plot of gene counts for these genes
+\
+**Do violon plot of gene counts for these genes**
+\
 
 ```{r, fig.height=64, fig.width=10}
 df %>%
@@ -328,7 +334,9 @@ df %>%
 
 # Plot the least variable genes
 
-## Plot mean and residuals for genes with the lowest ranks (least variable genes)
+\
+Plot mean and residuals for genes with the lowest ranks (least variable genes)
+\
 
 ```{r, fig.height=60, fig.width=7}
 genes_to_plot <- as.character(tail(rank_combine$genes, n = 20))
@@ -363,7 +371,9 @@ stats_list %>%
 
 ```
 
-## Do violin plot of gene counts for these genes
+\
+Do violin plot of gene counts for these genes
+\
 
 ```{r, fig.height=64, fig.width=10}
 df %>%
@@ -389,9 +399,10 @@ df %>%
 # Plot high variability genes next to low variability genes
 
 Trying to plot high variability next to low variability, I noticed that the low variability are generally on way lower scales/counts.
+
 The goal of this is to visualize how gene counts are distributed for high vs low variability genes.
 
-```{r, fig.height=10, fig.width=10}
+```{r, fig.height=12, fig.width=10}
 df %>%
   select(c("YOR383C",  #high var
            "YOR234C", #low var
@@ -428,9 +439,11 @@ df %>%
 
 The most interesting genes are those with a very low mean, so overall low expression, but with high residuals. These genes are lowly expressed in most cells, but in some are highly expressed and thus have high variability. These genes are the most interesting for us. 
 
-## Plot their mean and residuals
+\
+Plot their mean and residuals
+\
 
-```{r, fig.height=60, fig.width=10}
+```{r, fig.height=40, fig.width=10}
 tmp <- stats_list %>%
   map(~ filter(.x, mean < 1)) %>% #keep genes with low counts
   map(~ filter(.x, #keep genes with high rank
@@ -474,9 +487,11 @@ tmp %>%
 
 ```
 
-## Plot their gene counts
+\
+Plot their gene counts
+\
 
-```{r, fig.height=60, fig.width=10}
+```{r, fig.height=40, fig.width=10}
 df %>%
   select(c(all_of(common_genes))) %>% #select the interesting genes
   cbind(df[5848:5850]) %>% #keep metadata as well
@@ -562,6 +577,9 @@ ggMarginal(tmp, type = "densigram")
 
 If a gene has high or low expression in a cell, do other genes have the same expression pattern?
 
+\
+Calculate a correlation matrix - computer R squared between gene pairs. 
+
 ```{r}
 #prep the df to work on
 tmp <- stats_list %>%
@@ -603,6 +621,8 @@ rownames(rsq_matrix) <- common_genes
 
 ```
 
+Visualize the R squared on a heatmap
+
 ```{r}
 tmp <- rsq_matrix %>%
   as.data.frame %>%
@@ -623,11 +643,21 @@ ggplot(tmp,
 
 ```
 
-Get top 10 correlated genes
+Show the top 10 correlated genes:
 
 ```{r}
-head(tmp, 10)
+tmp_matrix <- head(tmp, 10)
 
+tmp_matrix$var1 <- gen_des$common_name[match(tmp_matrix$var1, gen_des$genes)]
+tmp_matrix$var2 <- gen_des$common_name[match(tmp_matrix$var2, gen_des$genes)]
+
+tmp_matrix
+
+```
+
+Append these genes to common gene names and include for each gene its description.
+
+```{r}
 common_genes <- union(tmp$var1[1:10], 
                       tmp$var2[1:10])
 
@@ -640,14 +670,15 @@ gen_des %>%
 
 ```
 
+The gene ASH1 (YKL185W) appears twice in the correlation matrix.
+
 # Plot FIT2 vs FIT3
 
-## Plot FIT2 and FIT3 gene counts on linear and log scale
+**Plot FIT2 and FIT3 gene counts on linear and log scale**
+
+\
 
 Fit2 and Fit3 are interesting genes, try to plot their counts against each other to see if they correlate.
-There is no significant sequence similarity between FIT2 and FIT3.
-The two genes are facing each other on the genome.
-
 
 ```{r, fig.show='hold'}
 #plot on linear scale
@@ -674,7 +705,9 @@ df %>%
 
 ```
 
-## Do marginal distribution plot
+**Do marginal distribution plot**
+
+\
 
 The zeros make it clear that your data is not negative binomial. The distribution of the log pseudocount plot (log x+1) is a mixture of at least two underlying distributions, because it is not consistent with a single negative binomial distribution. And that mixture argues for heterogeneity, because there's at least two different populations of things with differing underlying properties
 
@@ -693,3 +726,20 @@ ggMarginal(tmp, type = "densigram")
 
 ```
 
+**There is no significant sequence similarity between FIT2 and FIT3.**
+
+Blast DNA seq of FIT2 vs DNA seq of FIT3 shows no sequence similarity.
+
+```{r echo= FALSE }
+
+include_graphics("../images_for_rmd/Blast_FIT2vsFIT3.png")
+
+```
+
+**The two genes are facing each other on the genome**, so let's check if their peaks are resolved properly or if they show some overlap.
+
+```{r echo= FALSE }
+
+include_graphics("../images_for_rmd/FIT2_FIT3_on_DNA.png")
+
+```
