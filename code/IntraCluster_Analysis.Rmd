@@ -580,17 +580,19 @@ Calculate a correlation matrix - computer R squared between gene pairs.
 
 ```{r}
 #prep the df to work on
-tmp <- stats_list %>%
-  map(~ filter(.x, mean < 2)) %>% #keep genes with low counts
-  map(~ filter(.x, #keep genes with high rank
-               genes %in% unique(grep(paste(rank_combine$genes[1:500],
-                                            collapse="|"),
-                                            genes,
-                                            value = T))))
-
-common_genes <- Reduce(intersect, #get genes present in all timebins 
-                       lapply(tmp, 
-                              function(x) {x$genes}))
+common_genes <- stats_list %>%
+  map2(names(stats_list), #merge all lists, adding a column with sampling_point
+       ~.x %>%
+         mutate(sampling_point = .y)) %>%
+  bind_rows() %>%
+  group_by(genes) %>% #group by genes and calculate. the overall average expr
+  summarise(mean_expr = mean(mean)) %>%
+  filter(mean_expr < 1) %>% #keep genes with low counts
+  filter(genes %in% unique(grep(paste(rank_combine$genes[1:500], #keep high rank
+                                      collapse="|"),
+                                genes,
+                                value = T))) %>%
+  pull(genes)
 
 tmp <- df %>%
   select(c(all_of(common_genes)))
@@ -619,25 +621,39 @@ rownames(rsq_matrix) <- common_genes
 
 ```
 
-Visualize the R squared on a heatmap
+Visualize the R squared distribution
 
 ```{r}
-tmp <- rsq_matrix %>%
+rsq_matrix %>%
   as.data.frame %>%
   rownames_to_column(var = 'var1') %>%
   gather(var2, value, -var1) %>%
-  mutate(value = round(value, 4)) %>% #express R sequared as %
+  drop_na() %>%
+  ggplot(aes(x = value)) +
+  geom_density() +
+  xlim(-0.01, 0.4) +
+  xlab("r squared")
+
+```
+
+Visualize the R squared on a heatmap
+
+```{r}
+rsq_matrix %>%
+  as.data.frame %>%
+  rownames_to_column(var = 'var1') %>%
+  gather(var2, value, -var1) %>%
   filter(value < 1,
          value > 0.02) %>% #remove the genes matching with themselves
   drop_na(value) %>%
-  arrange(desc(value))
-
-ggplot(tmp,
+  arrange(desc(value)) %>%
+  ggplot(
        aes(x = var1, 
            y = var2,
            fill = value)) +
   geom_tile() + 
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.title = element_blank())
 
 ```
 
