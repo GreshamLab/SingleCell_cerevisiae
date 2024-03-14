@@ -55,6 +55,8 @@ colnames(gen_des) <- c("genes",
                        "description",
                        "common_name")
 
+gen_des$gene_name <- paste0(gen_des$common_name, "|", gen_des$genes)
+
 rm("ensembl")
 
 ```
@@ -588,7 +590,7 @@ common_genes <- stats_list %>%
   group_by(genes) %>% #group by genes and calculate. the overall average expr
   summarise(mean_expr = mean(mean)) %>%
   filter(mean_expr < 1) %>% #keep genes with low counts
-  filter(genes %in% unique(grep(paste(rank_combine$genes[1:500], #keep high rank
+  filter(genes %in% unique(grep(paste(rank_combine$genes[1:100], #keep high rank
                                       collapse="|"),
                                 genes,
                                 value = T))) %>%
@@ -624,11 +626,13 @@ rownames(rsq_matrix) <- common_genes
 Visualize the R squared distribution
 
 ```{r}
-rsq_matrix %>%
+tmp <- rsq_matrix %>%
   as.data.frame %>%
   rownames_to_column(var = 'var1') %>%
   gather(var2, value, -var1) %>%
-  drop_na() %>%
+  drop_na() 
+
+tmp %>%
   ggplot(aes(x = value)) +
   geom_density() +
   xlim(-0.01, 0.4) +
@@ -639,12 +643,8 @@ rsq_matrix %>%
 Visualize the R squared on a heatmap
 
 ```{r}
-rsq_matrix %>%
-  as.data.frame %>%
-  rownames_to_column(var = 'var1') %>%
-  gather(var2, value, -var1) %>%
-  filter(value < 1,
-         value > 0.02) %>% #remove the genes matching with themselves
+tmp %>%
+  filter(value < 1) %>% #remove the genes matching with themselves
   drop_na(value) %>%
   arrange(desc(value)) %>%
   ggplot(
@@ -660,10 +660,12 @@ rsq_matrix %>%
 Show the top 10 correlated genes:
 
 ```{r}
-tmp_matrix <- head(tmp, 10)
+tmp_matrix <- head(tmp %>% 
+                     arrange(desc(value)),
+                   20)
 
-tmp_matrix$var1 <- gen_des$common_name[match(tmp_matrix$var1, gen_des$genes)]
-tmp_matrix$var2 <- gen_des$common_name[match(tmp_matrix$var2, gen_des$genes)]
+tmp_matrix$var1 <- gen_des$gene_name[match(tmp_matrix$var1, gen_des$genes)]
+tmp_matrix$var2 <- gen_des$gene_name[match(tmp_matrix$var2, gen_des$genes)]
 
 tmp_matrix
 
@@ -694,7 +696,7 @@ The gene ASH1 (YKL185W) appears twice in the correlation matrix.
 
 Fit2 and Fit3 are interesting genes, try to plot their counts against each other to see if they correlate.
 
-```{r, fig.show='hold'}
+```{r, fig.show='hold', out.width='50%'}
 #plot on linear scale
 df %>%
   select(c("YOR382W", "YOR383C")) %>% #select FIT2 and FIT3 genes
@@ -742,11 +744,24 @@ ggMarginal(tmp, type = "densigram")
 
 **There is no significant sequence similarity between FIT2 and FIT3.**
 
-Blast DNA seq of FIT2 vs DNA seq of FIT3 shows no sequence similarity.
+Blast DNA seq of FIT2 vs DNA seq of FIT3 shows no sequence similarity. 
 
 ```{r echo= FALSE }
-
 include_graphics("../images_for_rmd/Blast_FIT2vsFIT3.png")
+
+```
+
+Do alignement with CLUSTALW as well. 
+
+```{r echo= FALSE }
+include_graphics("../images_for_rmd/CLUSTALW_FIT2vsFIT3_DNA.png")
+
+```
+
+Check also protein seq of FIT2 vs FIT3 on CLUSTALW.
+
+```{r echo= FALSE }
+include_graphics("../images_for_rmd/CLUSTALW_FIT2vsFIT3_protein.png")
 
 ```
 
