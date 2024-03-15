@@ -34,6 +34,10 @@ conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
 conflict_prefer("rename", "dplyr")
 
+#Create directory to save output
+if (!dir.exists("../results/IntraCluster_Analysis")){
+  dir.create("../results/IntraCluster_Analysis/")}
+
 ```
 
 # Load dataset and filter data 
@@ -263,7 +267,7 @@ rank_combine <-
   summarise(rank_combined = sum(rank)) %>%
   arrange(desc(rank_combined)) #arrange from highest to lowest
 
-write.csv2(rank_combine, "../results/04_RankCombine.csv", row.names = F)
+write.csv2(rank_combine, "../results/RankCombine.csv", row.names = F)
 
 ```
 
@@ -512,263 +516,14 @@ df %>%
 
 ```
 
-# TSL1 and TPS3 genes
-
-David is interested in seeing the distribution of TSL1 and TPS3 genes, so plot their mean and residuals
+#Save output
 
 ```{r}
-#plot mean expr and residual
-stats_list %>%
-  map(~ filter(.x, genes %in% c("YML100W", "YMR261C"))) %>%
-  map2(names(stats_list), ~.x %>% 
-         mutate(Time_Point = .y,
-                Time_Point = as.numeric(Time_Point))) %>% #add time column
-  bind_rows() %>%
-  select(c("common_name", "mean", "residuals", "Time_Point")) %>%
-  melt(id = c("common_name", "Time_Point")) %>%
-  ggplot(aes(x = Time_Point, #plot
-             y = value)) +
-  geom_point() +
-  scale_x_continuous(breaks = seq(from = 0,
-                                  to = 90,
-                                  by = 6)) +
-  expand_limits(x = 0, y = 0) +
-  facet_grid(common_name ~ variable, 
-             scales = "free")
+saveRDS(stats_list,
+        file = "../results/IntraCluster_Analysis/stats_list.Rds")
+saveRDS(rank_combine,
+        file = "../results/IntraCluster_Analysis/rank_combing.Rds")
 
 ```
 
-Plot gene counts
 
-```{r, fig.height=8, fig.width=8}
-df %>%
-  select(c("YML100W", "YMR261C", "time_interval")) %>% #select the interesting genes
-  rename(TSL1_YML100W = YML100W,
-         TPS3_YMR261C = YMR261C) %>%
-  pivot_longer(cols = !time_interval,
-               names_to = "genes") %>%
-  ggplot(aes(x = time_interval,
-             y = value)) +
-  geom_violin() +
-  facet_wrap(~genes, ncol = 1)
-
-```
-
-And do a marginal plot
-
-```{r, fig.keep='last', warning=FALSE}
-tmp <- df %>%
-  select(c("YML100W", "YMR261C")) %>% #select FIT2 and FIT3 genes
-  rename(TSL1_YML100W = YML100W,
-         TPS3_YMR261C = YMR261C) %>%
-  cbind(df[5848:5850]) %>% #keep metadata as well
-  ggplot(aes(x = log10(TSL1_YML100W+1),
-             y = log10(TPS3_YMR261C+1))) +
-  xlab("TSL1_YML100W") +
-  ylab("TPS3_YMR261C") +
-  ggtitle("Log10 Scale") +
-  geom_point()
-
-ggMarginal(tmp, type = "densigram")
-
-```
-
-# Do some of the low mean high residuals genes correlate?
-
-If a gene has high or low expression in a cell, do other genes have the same expression pattern?
-
-\
-Calculate a correlation matrix - computer R squared between gene pairs. 
-
-```{r}
-#prep the df to work on
-common_genes <- stats_list %>%
-  map2(names(stats_list), #merge all lists, adding a column with sampling_point
-       ~.x %>%
-         mutate(sampling_point = .y)) %>%
-  bind_rows() %>%
-  group_by(genes) %>% #group by genes and calculate. the overall average expr
-  summarise(mean_expr = mean(mean)) %>%
-  filter(mean_expr < 1) %>% #keep genes with low counts
-  filter(genes %in% unique(grep(paste(rank_combine$genes[1:100], #keep high rank
-                                      collapse="|"),
-                                genes,
-                                value = T))) %>%
-  pull(genes)
-
-tmp <- df %>%
-  select(c(all_of(common_genes)))
-
-#load function to calculate R-squared
-calc_r_sq <- function(x, y) {
-  lm_model <- lm(y ~ x)
-  summary(lm_model)$r.squared
-}
-
-#create matrix to store R-squared values
-rsq_matrix <- matrix(NA, 
-                     nrow = ncol(tmp), 
-                     ncol = ncol(tmp))
-
-# Loop through combinations of columns and calculate R-squared
-for (i in 1:(ncol(tmp) - 1)) {
-  for (j in (i + 1):ncol(tmp)) {
-    rsq_matrix[i, j] <- calc_r_sq(tmp[[i]], tmp[[j]])
-  }
-}
-
-#assign col and row manes to matrix
-colnames(rsq_matrix) <- common_genes
-rownames(rsq_matrix) <- common_genes
-
-```
-
-Visualize the R squared distribution
-
-```{r}
-tmp <- rsq_matrix %>%
-  as.data.frame %>%
-  rownames_to_column(var = 'var1') %>%
-  gather(var2, value, -var1) %>%
-  drop_na() 
-
-tmp %>%
-  ggplot(aes(x = value)) +
-  geom_density() +
-  xlim(-0.01, 0.4) +
-  xlab("r squared")
-
-```
-
-Visualize the R squared on a heatmap
-
-```{r}
-tmp %>%
-  filter(value < 1) %>% #remove the genes matching with themselves
-  drop_na(value) %>%
-  arrange(desc(value)) %>%
-  ggplot(
-       aes(x = var1, 
-           y = var2,
-           fill = value)) +
-  geom_tile() + 
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
-        axis.title = element_blank())
-
-```
-
-Show the top 10 correlated genes:
-
-```{r}
-tmp_matrix <- head(tmp %>% 
-                     arrange(desc(value)),
-                   20)
-
-tmp_matrix$var1 <- gen_des$gene_name[match(tmp_matrix$var1, gen_des$genes)]
-tmp_matrix$var2 <- gen_des$gene_name[match(tmp_matrix$var2, gen_des$genes)]
-
-tmp_matrix
-
-```
-
-Append these genes to common gene names and include for each gene its description.
-
-```{r}
-common_genes <- union(tmp$var1[1:10], 
-                      tmp$var2[1:10])
-
-gen_des %>%
-  filter(genes %in% common_genes) %>%
-  relocate("genes", "common_name", "description") %>% 
-  kable %>%
-  kable_styling("striped", full_width = T) %>% 
-  scroll_box(height = "400px")
-
-```
-
-The gene ASH1 (YKL185W) appears twice in the correlation matrix.
-
-# Plot FIT2 vs FIT3
-
-**Plot FIT2 and FIT3 gene counts on linear and log scale**
-
-\
-
-Fit2 and Fit3 are interesting genes, try to plot their counts against each other to see if they correlate.
-
-```{r, fig.show='hold', out.width='50%'}
-#plot on linear scale
-df %>%
-  select(c("YOR382W", "YOR383C")) %>% #select FIT2 and FIT3 genes
-  cbind(df[5848:5850]) %>% #keep metadata as well
-  ggplot(aes(x = YOR382W,
-             y = YOR383C)) +
-  xlab("FIT2") +
-  ylab("FIT3") +
-  ggtitle("Linear Scale") +
-  geom_point()
-
-#plot on log scale
-df %>%
-  select(c("YOR382W", "YOR383C")) %>% #select FIT2 and FIT3 genes
-  cbind(df[5848:5850]) %>% #keep metadata as well
-  ggplot(aes(x = log10(YOR382W),
-             y = log10(YOR383C))) +
-  xlab("FIT2") +
-  ylab("FIT3") +
-  ggtitle("Log10 Scale") +
-  geom_point()
-
-```
-
-**Do marginal distribution plot**
-
-\
-
-The zeros make it clear that your data is not negative binomial. The distribution of the log pseudocount plot (log x+1) is a mixture of at least two underlying distributions, because it is not consistent with a single negative binomial distribution. And that mixture argues for heterogeneity, because there's at least two different populations of things with differing underlying properties
-
-```{r, fig.keep='last', warning=FALSE}
-tmp <- df %>%
-  select(c("YOR382W", "YOR383C")) %>% #select FIT2 and FIT3 genes
-  cbind(df[5848:5850]) %>% #keep metadata as well
-  ggplot(aes(x = log10(YOR382W+1),
-             y = log10(YOR383C+1))) +
-  xlab("FIT2") +
-  ylab("FIT3") +
-  ggtitle("Log10 Scale") +
-  geom_point()
-
-ggMarginal(tmp, type = "densigram")
-
-```
-
-**There is no significant sequence similarity between FIT2 and FIT3.**
-
-Blast DNA seq of FIT2 vs DNA seq of FIT3 shows no sequence similarity. 
-
-```{r echo= FALSE }
-include_graphics("../images_for_rmd/Blast_FIT2vsFIT3.png")
-
-```
-
-Do alignement with CLUSTALW as well. 
-
-```{r echo= FALSE }
-include_graphics("../images_for_rmd/CLUSTALW_FIT2vsFIT3_DNA.png")
-
-```
-
-Check also protein seq of FIT2 vs FIT3 on CLUSTALW.
-
-```{r echo= FALSE }
-include_graphics("../images_for_rmd/CLUSTALW_FIT2vsFIT3_protein.png")
-
-```
-
-**The two genes are facing each other on the genome**, so let's check if their peaks are resolved properly or if they show some overlap.
-
-```{r echo= FALSE }
-
-include_graphics("../images_for_rmd/FIT2_FIT3_on_DNA.png")
-
-```
