@@ -53,7 +53,7 @@ The dataset can be downloaded from [supplementary data 1](https://zenodo.org/rec
 The dataset "is single-cell response to rapamycin count data deposited in GEO with accession GSE242556. It is a 173348 rows × 5847 columns TSV.GZ file where the first row is a header, the first 5843 columns are integer gene counts, and the final 4 columns ('Gene', 'Replicate', 'Pool', and 'Experiment') are cell-specific metadata."
 
 ```{r, message = F}
-rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
+rawdata <- read_delim("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
 
 ```
 
@@ -121,8 +121,9 @@ df_stats <- rbind(mean = df_mean, #merge stats in one df
                   sd = df_sd, 
                   CV = df_CV)
 
-df_stats <- as.data.frame(t(df_stats)) #transpose to make df ggplot friendly
-df_stats <- rownames_to_column(df_stats, "genes") #add gene name column
+df_stats <- as.data.frame(t(df_stats)) %>% #transpose to make df ggplot friendly
+  rownames_to_column("genes") %>% #add gene name column
+  drop_na()
 
 rm(list = c("df_mean", "df_sd", "df_CV")) #clean up workspace
 
@@ -243,7 +244,6 @@ rm("residuals")
 
 ```
 
-
 ## Distribution of non adjusted residuals
 
 ```{r, fig.show='hold', out.width='50%' }
@@ -304,6 +304,10 @@ colnames(gen_des) <- c("genes",
                        "common_name",
                        "gene_Set")
 
+gen_des$gene_name <- paste0(gen_des$common_name, "|", gen_des$genes)
+
+saveRDS(gen_des, file = "../results/Gene_Variance/gensets_and_description.Rds")
+
 rm("ensembl")
 
 ```
@@ -327,7 +331,7 @@ df_stats <- merge(df_stats,
   relocate(common_name, .after = genes)
 
 write.csv2(df_stats, 
-           "../results/Gene_Variance/gene_statistics_and_description.csv")
+           "../results/Gene_Variance/gene_stats_and_description.csv")
 rm(list = c("gen_des", "tmp"))
 
 ```
@@ -365,10 +369,9 @@ Here I will filter out from the dataframe the genes that are involved in the cel
 df_no_cell_cycle <- df_stats[!grepl("cell cycle", df_stats$description),]
 
 write.csv2(df_no_cell_cycle, 
-           "../results/Gene_Variance/no_cell_cycle_genes.csv")
+           "../results/Gene_Variance/gene_stats_no_cellcycle.csv")
 
 ```
-
 
 # Gene set enrichment analysis
 
