@@ -16,9 +16,9 @@ readSTARsoloCounts <-
            strip.suffix = FALSE) 
   {
     suppressPackageStartupMessages({
-      library(Matrix)
-      library(httr)
-      library(Seurat)
+      require(Matrix)
+      require(httr)
+      require(Seurat)
     })
     
     all.files <- list(`expression matrix` = mtx, 

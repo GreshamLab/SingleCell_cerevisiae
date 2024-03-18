@@ -19,40 +19,24 @@ The idea is to assign time and cell cycle to cells and then look at the variance
 
 ```{r, results='hide', message=FALSE}
 library(tidyverse)
+source("functions/loadNoRapaTreat.R")
 
 #create folders
-if (!dir.exists("../results/Bootstrapping")){dir.create("../results/Bootstrapping/")}
+if (!dir.exists("../results/Bootstrapping")){
+  dir.create("../results/Bootstrapping/")}
 
 ```
 
+# Load data
 
-# Load data and filter
+Load the gene count matrix and  the metadata in which Chris estimated the cell cycle phase and assigned a pseudotime to the cells. The loadNoRapaTreat takes care of importing those two dataframes, merging them, only keeping the wt strain before rapa treatment, assigning timebins to cell, and normalizing the gene counts. Check the function itself for more info.
 
-Load the gene count matrix and load the metadata in which Chris estimated the cell cycle phase and assigned a pseudotime to the cells. 
+```{r}
+df <- loadNoRapaTreat(rawdata_path = "../data/2021_RAPA_TIMECOURSE.tsv.gz",
+                      metadata_path = "../data/Cell_Cycle_Metadata_01112024.tsv.gz")
 
-```{r, message = F}
-rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
-metadata <- read_tsv("../data/Cell_Cycle_Metadata_01112024.tsv.gz") #cell cycle data
-df_stats <- read.csv2("../results/Gene_Variance/gene_statistics_and_description.csv", row.names = 1)
-
-rawdata <- cbind(rawdata, metadata)
-rm("metadata")
-
-```
-
-Only filter for the WT strain and look at the first two timepoints, which correspond to continuously sampled cells before rapamycin treatment (see pre-print for details).
-
-```{r, message = F}
-# Filter for the wt strain in the first two timepoints of the experiment
-df <- rawdata %>%
-  filter(Pool %in% c("1","2")) %>% #timepoints before rapamycin treatment
-  filter(Gene %in% "WT") %>% #only wt strain
-  filter(rowSums(.[1:5843]) < 16000) %>% #remove counts above 16000
-  mutate_if(is.character, as.factor) %>% #convert to factor
-  drop_na()
-
-df[1:5843] <- df[1:5843]*10000/rowSums(df[1:5843]) #normalize
-
+df_stats <- read.csv2("../results/Gene_Variance/gene_stats_and_description.csv", 
+                      row.names = 1)
 ```
 
 # Count cells in each cell cycle phase and in each timepoint
@@ -66,7 +50,6 @@ barplot(table(df$Cell_Cycle_Phase),
 ```
 
 ```{r, fig.show='hold', out.width='50%' }
-
 hist(df$Cell_Cycle_Time, 
      breaks = 44,
      main = "Each bin is 2 minutes of pseudotime",
