@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=05:00:00
+#SBATCH --time=23:00:00
 #SBATCH --mem=84GB
 #SBATCH --job-name=Knit_rmd
 #SBATCH --mail-type=END

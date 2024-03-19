@@ -6,6 +6,7 @@ files <- c(
   "Bootstrapping.Rmd",
   "Cluster_Cells.Rmd",
   "IntraCluster_Analysis.Rmd",
+  "IntraCluster_Analysis_FIT2vsFIT3.Rmd",
   "IntraCluster_AllTimePoints.Rmd",
   "Barseq_Variance.Rmd"
   )
