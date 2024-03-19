@@ -14,6 +14,16 @@ knit: (function(inputFile, encoding) {
 
 ---
 
+After bootstrapping, we saw that as long as we have approx. 800/1000 cells in each timebin, the model we fit through those cells is similar enough to the model with all cells (pearson coeff 0.9584293). 
+
+Furthermore, from clustering the cells, we saw that cells do cluster based on cell cycle phase and based on the time along the cell cycle. This is great, but it is a problem since we are investigating cell variance, and most of the variance we are currently finding is cell-cycle related.
+
+To bypass this problem, we divide cells in 3 minutes time intervals. After checking that we have 800/1000 cells in each timebin, we fit a linear model for each bin. We then calculate the residuals for each time bin. To extract the genes that are the most variable across all timebins, we rank genes based on their residuals (decreasing order) and then rank combine genes across timebins (basically sum the rank of genes across different timebing). The higher the rank, the more variable the gene is across the sampling points we have in the data (in this case before rapamycin treatment).
+
+Finally, we plot some high and low variability genes, with their average gene count, residuals, and gene count distribution.
+
+At the very end, we also check gene counts and variability for TSL1 and TPS3 genes. These genes are interesting because they have been shown to have stochastic gene expression ([paper here](https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.1001325))
+
 # Load packages
 
 ```{r, results='hide', message=FALSE}
@@ -28,11 +38,13 @@ library(ggExtra, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
 library(knitr)
 library(kableExtra)
 library(tidyheatmaps, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
+source("functions/loadNoRapaTreat.R")
 
 #Solve conflicts
 conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
 conflict_prefer("rename", "dplyr")
+conflict_prefer("intersect", "base")
 
 #Create directory to save output
 if (!dir.exists("../results/IntraCluster_Analysis")){
@@ -40,59 +52,20 @@ if (!dir.exists("../results/IntraCluster_Analysis")){
 
 ```
 
-# Load dataset and filter data 
+# Load data 
 
-```{r, results='hide', message=FALSE}
-rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
-metadata <- read_tsv("../data/Cell_Cycle_Metadata_01112024.tsv.gz") #cell cycle data
-
-#load gene info
-ensembl <- useMart(biomart = "ENSEMBL_MART_ENSEMBL",
-                   dataset = "scerevisiae_gene_ensembl") 
-
-gen_des <- getBM(attributes = c("ensembl_gene_id",
-                                "description",
-                                "external_gene_name"),
-                 mart = ensembl)
-
-colnames(gen_des) <- c("genes", 
-                       "description",
-                       "common_name")
-
-gen_des$gene_name <- paste0(gen_des$common_name, "|", gen_des$genes)
-
-rm("ensembl")
-
-```
-
-Do some data wrangling and divide cells into 3 minutes bins.
+The loadNoRapaTreat takes care of importing rawdata and metadata, merging them, only keeping the wt strain before rapa treatment, assigning timebins to cell, and normalizing the gene counts. Check the function itself for more info.
 
 ```{r}
-df <- cbind(rawdata, metadata) %>% #merge data and metadata
-  filter(Pool %in% c("1", "2")) %>% #timepoints before rapamycin treatment
-  filter(Gene %in% "WT") %>% #only wt strain
-  drop_na() %>% #remove empty levels
-  mutate(max = max(Cell_Cycle_Time), #divide cells in time bins
-         min = min(Cell_Cycle_Time),
-         width = (max-min)/30,
-         bin1 = ceiling((Cell_Cycle_Time - min)/width),
-         time_interval = ifelse(Cell_Cycle_Time == min, 
-                                bin1 + 1, 
-                                bin1),
-         time_interval = time_interval * 3) %>% #each bin should reflect minutes
-  select(-c("max", "min", "width", "bin1")) %>%
-  mutate(time_interval = factor(time_interval))
+df <- loadNoRapaTreat(rawdata_path = "../data/2021_RAPA_TIMECOURSE.tsv.gz",
+                      metadata_path = "../data/Cell_Cycle_Metadata_01112024.tsv.gz")
+
+gen_des <- readRDS("../results/Gene_Variance/gensets_and_description.Rds") %>%
+  select(-c("gene_Set"))
 
 ```
 
-Normalize data
-
-```{r}
-df[1:5843] <- df[1:5843]*10000/rowSums(df[1:5843]) #normalize
-
-```
-
-Check how many cells we have in each bin
+Check how many cells we have in each bin to make sure we have at least 800/100 minimum
 
 ```{r}
 df %>%
@@ -106,7 +79,7 @@ df %>%
 
 # Intra-cluster analysis and plot regression lines
 
-For each bin, normalize and remove high and low counts. Then calculate mean, sd, and coefficient of variation and build a linear model (coefficient of variation vs mean). Then calculate the residuals, and adjust them based on the mean. In the past we used adjusted residuals, but we decided not to use them here for further plots because when the mean is very low, the adj_res become very high and they 'overpower' more interesting genes with higher residuals. We still calculate them here in case a quick comparison is necessary. 
+For each bin: calculate mean, standard deviation, and coefficient of variation. Then build a linear model (coefficient of variation vs mean) and calculate the residuals, and adjust them based on the mean. In the past we used adjusted residuals, but we decided not to use them anymore since when the mean is very low, the adj_res becomes very high and 'overpowers' more interesting genes with higher residuals. We still calculated them here to show this effect in a plot. 
 
 ```{r}
 #define lists to store output
@@ -119,16 +92,20 @@ for (i in 1:length(levels(df$time_interval))) {
   #Create dataframe for specific timepoint
   tmp <- df %>%
     filter(time_interval %in% levels(df$time_interval)[i]) %>%
-    select(-c("Gene", "Replicate", "Pool", "Experiment", "Cell_Cycle_Phase",
-              "Cell_Cycle_Time", "time_interval")) %>%
-    filter(rowSums(.) < 15000) #remove cells with counts above 15000
-
+    select(-c("Gene", 
+              "Replicate", 
+              "Pool", 
+              "Experiment", 
+              "Cell_Cycle_Phase",
+              "Cell_Cycle_Time", 
+              "time_interval"))
+  
   #calculate mean, sd, and coefficient of variation
   tmp_stats <- as.data.frame(t( #transpose to make df ggplot friendly
     rbind(mean = apply(tmp, 2, mean, na.rm = T),
           sd = apply(tmp, 2, sd, na.rm = T),
           CV = (apply(tmp, 2, sd))/(apply(tmp, 2, mean, na.rm = T))))) %>%
-    filter(mean > 0.01) %>% #remove low expr
+    filter(mean > 0.01) %>% #remove very low average expr
     drop_na() #drop empty levels
 
   #fit the model
@@ -184,7 +161,9 @@ ggarrange(plotlist = plot_list, ncol=3, nrow =10)
 
 # Plot cell cycle genes
 
-As a sanity check, plot the both the non-adjusted and the adjusted residuals of cell cycle genes. Their residuals should be very low since cells are clustered based on time. In the past we used adjusted residuals, but we decided not to use them here for further plots because when the mean is very low, the adj_res become very high and they 'overpower' more interesting genes with higher residuals. We still calculate them here to quickly compare them with the non-adjusted residuals. 
+As a sanity check, plot both the non-adjusted and the adjusted residuals of cell cycle genes. In the past we used adjusted residuals, but we decided not to use them because when the mean is very low, the adj_res become very high and they 'overpower' more interesting genes with higher residuals. Here they are plotted just to show this effect.
+
+For cell cycle genes, their average expression should "cycle" in the cell cycle, and their residuals should be low since cells are clustered based on three minutes time windows. 
 
 **y scales are different!**
 
@@ -225,7 +204,7 @@ rm("cell_cycle_genes")
 
 ```
 
-Check the mean, residuals, and adjusted residuals distributions
+# Check the mean, residuals, and adjusted residuals distributions in the dataset
 
 ```{r, warning=FALSE}
 stats_list %>%
@@ -267,16 +246,13 @@ rank_combine <-
   summarise(rank_combined = sum(rank)) %>%
   arrange(desc(rank_combined)) #arrange from highest to lowest
 
-write.csv2(rank_combine, "../results/RankCombine.csv", row.names = F)
-
 ```
 
 # Plot most variable genes
 
 Extract the most variable genes and plot their mean and residuals. Then do a violin plot of their counts over time. 
-\
-**Plot mean and residuals for genes with the highest ranks (most variable genes)**
-\
+
+## Plot mean and residuals for genes with the highest ranks (most variable genes)
 
 ```{r, fig.height=60, fig.width=7}
 genes_to_plot <- as.character(rank_combine$genes)[3:22] #skips 2 ribosomial genes
@@ -311,9 +287,7 @@ stats_list %>%
 
 ```
 
-\
-**Do violon plot of gene counts for these genes**
-\
+## Do violon plot of gene counts for these genes
 
 ```{r, fig.height=64, fig.width=10}
 df %>%
@@ -338,9 +312,7 @@ df %>%
 
 # Plot the least variable genes
 
-\
-Plot mean and residuals for genes with the lowest ranks (least variable genes)
-\
+## Plot mean and residuals for genes with the lowest ranks (least variable genes)
 
 ```{r, fig.height=60, fig.width=7}
 genes_to_plot <- as.character(tail(rank_combine$genes, n = 20))
@@ -375,9 +347,7 @@ stats_list %>%
 
 ```
 
-\
-Do violin plot of gene counts for these genes
-\
+## Do violin plot of gene counts for these genes
 
 ```{r, fig.height=64, fig.width=10}
 df %>%
@@ -443,9 +413,8 @@ df %>%
 
 The most interesting genes are those with a very low mean, so overall low expression, but with high residuals. These genes are lowly expressed in most cells, but in some are highly expressed and thus have high variability. These genes are the most interesting for us. 
 
-\
-Plot their mean and residuals
-\
+## Plot their mean and residuals
+
 
 ```{r, fig.height=40, fig.width=10}
 tmp <- stats_list %>%
@@ -491,9 +460,7 @@ tmp %>%
 
 ```
 
-\
-Plot their gene counts
-\
+## Plot their gene counts
 
 ```{r, fig.height=40, fig.width=10}
 df %>%
@@ -516,13 +483,74 @@ df %>%
 
 ```
 
-#Save output
+# TSL1 and TPS3 genes
+
+David is interested in seeing the distribution of TSL1 and TPS3 genes, so plot their mean and residuals. These genes have been shown to have stochastic gene expression in [this paper](https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.1001325), that's why we are interested in checking them. 
+
+```{r}
+#plot mean expr and residual
+stats_list %>%
+  map(~ filter(.x, genes %in% c("YML100W", "YMR261C"))) %>%
+  map2(names(stats_list), ~.x %>% 
+         mutate(Time_Point = .y,
+                Time_Point = as.numeric(Time_Point))) %>% #add time column
+  bind_rows() %>%
+  select(c("common_name", "mean", "residuals", "Time_Point")) %>%
+  melt(id = c("common_name", "Time_Point")) %>%
+  ggplot(aes(x = Time_Point, #plot
+             y = value)) +
+  geom_point() +
+  scale_x_continuous(breaks = seq(from = 0,
+                                  to = 90,
+                                  by = 6)) +
+  expand_limits(x = 0, y = 0) +
+  facet_grid(common_name ~ variable, 
+             scales = "free")
+
+```
+
+Plot gene counts
+
+```{r, fig.height=8, fig.width=8}
+df %>%
+  select(c("YML100W", "YMR261C", "time_interval")) %>% #select the interesting genes
+  rename(TSL1_YML100W = YML100W,
+         TPS3_YMR261C = YMR261C) %>%
+  pivot_longer(cols = !time_interval,
+               names_to = "genes") %>%
+  ggplot(aes(x = time_interval,
+             y = value)) +
+  geom_violin() +
+  facet_wrap(~genes, ncol = 1)
+
+```
+
+And do a marginal plot
+
+```{r, fig.keep='last', warning=FALSE}
+tmp <- df %>%
+  select(c("YML100W", "YMR261C")) %>% #select FIT2 and FIT3 genes
+  rename(TSL1_YML100W = YML100W,
+         TPS3_YMR261C = YMR261C) %>%
+  cbind(df[5848:5850]) %>% #keep metadata as well
+  ggplot(aes(x = log10(TSL1_YML100W+1),
+             y = log10(TPS3_YMR261C+1))) +
+  xlab("TSL1_YML100W") +
+  ylab("TPS3_YMR261C") +
+  ggtitle("Log10 Scale") +
+  geom_point()
+
+ggMarginal(tmp, type = "densigram")
+
+```
+
+# Save output
 
 ```{r}
 saveRDS(stats_list,
         file = "../results/IntraCluster_Analysis/stats_list.Rds")
 saveRDS(rank_combine,
-        file = "../results/IntraCluster_Analysis/rank_combing.Rds")
+        file = "../results/IntraCluster_Analysis/rank_combine.Rds")
 
 ```
 
