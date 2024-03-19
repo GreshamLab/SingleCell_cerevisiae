@@ -1,5 +1,5 @@
 ---
-title: "06_Barseq_Variance"
+title: "07_Barseq_Variance"
 author: "Simone Zaghen"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
@@ -14,12 +14,17 @@ knit: (function(inputFile, encoding) {
 
 ---
 
+Akriti found some interesting genes from the Barseq experiment, and we decided to check the gene variability associated with those genes. She sent me a list of genes with fold change in two timepoints. From that list I will extract the genes with consistently high fold change across timepoints, and I will use those genes to extract information about their variability in the single cell dataset I am working with.
+
+To be noted is that Akriti's data are from fluconazole treatment, while mine are from rapamycin treatment. Also her experimental design and the question she was asking to the dataset were different compared to what i am doing. But we still wanted to see if we had any genes interesting for both that might require further study.
+
 # Load packages
 
 ```{r, results='hide', message=FALSE}
 library(tidyverse)
 library(readxl)
 library(kableExtra)
+source("functions/LoadWholeWtDataset.R")
 
 options(dplyr.summarise.inform = FALSE)
 
@@ -27,44 +32,28 @@ options(dplyr.summarise.inform = FALSE)
 
 # Load data
 
+Load the full dataset for the wild type strain. The function loadWholeWtDataset takes care of importing data and metadata, normalizing them, and calculating the timebins for each cell in the dataframe (divide cells into 3 minutes timebins). 
+
 ```{r, results='hide', message=FALSE}
-rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
-metadata <- read_tsv("../data/Cell_Cycle_Metadata_01112024.tsv.gz") #cell cycle data
-intracluster_output <- readRDS("../results/intracluster_analysis_output.Rds")
+counts <- loadWholeWtDataset(rawdata_path = "../data/2021_RAPA_TIMECOURSE.tsv.gz",
+                             metadata_path = "../data/Cell_Cycle_Metadata_01112024.tsv.gz")
+intracluster_output <- readRDS("../results/IntraCluster_AllTimePoints/intracluster_analysis_output.Rds")
 barseq <- read_delim("../data/barcode_seq_240223", col_types = cols())
 
 ```
 
-# Data wrangling 
+Since we don't have many cells per timebin after rapa tratment, we decided to merge sampling timepoints (column Pool) two by two. Then transform df into list (each element is a sampling point) to be able to loop functions through the list. 
 
 ```{r}
-counts <- cbind(rawdata, metadata) #merge data and metadata
-
-#merge timepoints 2 by 2 to get enough cells in each bin
 counts$Pool <- str_replace_all(counts$Pool, c("1" = "2",
                                               "3" = "4", 
                                               "5" = "6", 
                                               "7" = "8"))
-
-counts <- counts %>%
-  filter(Gene %in% "WT") %>% #only wt strain
-  drop_na() %>% #remove empty levels
-  mutate(max = max(Cell_Cycle_Time), #divide cells in time bins
-         min = min(Cell_Cycle_Time),
-         width = (max-min)/30,
-         bin1 = ceiling((Cell_Cycle_Time - min)/width),
-         time_interval = ifelse(Cell_Cycle_Time == min, 
-                                bin1 + 1, 
-                                bin1),
-         time_interval = time_interval * 3) %>% #each bin should reflect minutes
-  select(-c("max", "min", "width", "bin1")) %>%
-  mutate(time_interval = factor(time_interval))
-
-counts[1:5843] <- counts[1:5843]*10000/rowSums(counts[1:5843]) #normalize df
-
 ```
 
 # Check gene list from barcode sequencing data
+
+First I extract the genes that are interesting from Akriti's gene list. Then I use those genes to filter the dataframes in which I have stored the adjusted rank combined. 
 
 ```{r}
 #extract interesting genes from barseq data
@@ -85,6 +74,8 @@ rm(genes_to_plot)
 ```
 
 # Plot the rank over sampling points of the barseq genes
+
+For those genes whose ranks extracted, plot how the rank changes over time.
 
 ```{r, fig.width=8, fig.height=12}
 rank_barseq %>%
@@ -107,8 +98,9 @@ rank_barseq %>%
 
 # Table with those genes and their infos and stats
 
-```{r, results='asis'}
+For those interesting genes, make a table with all their info (logFC from Akriti's experiment, adjusted rank, and gene function/description).
 
+```{r, results='asis'}
 for (i in 1:length(rank_barseq)) {
   print(paste("Sampling point ", names(rank_barseq)[i]))
   cat("\n")
@@ -129,7 +121,9 @@ cat("\n")
 
 # Plot PDR5, ERG11, FLR1
 
-Un-nest the nested list
+By looking at the graphs with Chris, we thought that PDR5, ERG11, and FLR1 are interesting, and we want to check their stats more in depth.
+
+First, un-nest the nested list
 
 ```{r }
 stats_barseq <- intracluster_output %>%
@@ -160,6 +154,8 @@ rm(tmp)
 ```
 
 ## Plot mean expr and residuals of PDR5, ERG11, FLR1
+
+Some points are missing in the graphs because those timebins didn't have enough cells to compute the statistics.
 
 ```{r, fig.height=8, fig.width=8}
 genes_to_plot <- c("PDR5", "ERG11", "FLR1")

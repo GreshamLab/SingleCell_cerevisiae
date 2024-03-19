@@ -14,82 +14,55 @@ knit: (function(inputFile, encoding) {
 
 ---
 
+Now that we calculated the most variable genes for the sampling point before rapamycin tratment, we want to extend the analysis to all timepoints and check how the most variable geens change over time after rapamycin treatment. 
+
 # Load packages
 
 ```{r, results='hide', message=FALSE}
 #Load packages from CRAN
 library(tidyverse)
 library(ggpubr)
-library(biomaRt)
-library(readxl)
 library(conflicted)
+source("functions/LoadWholeWtDataset.R")
 
+conflicts_prefer(dplyr::filter)
 options(dplyr.summarise.inform = FALSE)
+
+#create folders
+if (!dir.exists("../results/IntraCluster_AllTimePoints")){
+  dir.create("../results/IntraCluster_AllTimePoints/")}
 
 ```
 
 # Load data 
 
+Load the full dataset for the wild type strain. The function loadWholeWtDataset takes care of importing data and metadata, normalizing them, and calculating the timebins for each cell in the dataframe (divide cells into 3 minutes timebins). 
+
 ```{r, results='hide', message=FALSE}
-rawdata <- read_tsv("../data/2021_RAPA_TIMECOURSE.tsv.gz") #load raw data
-metadata <- read_tsv("../data/Cell_Cycle_Metadata_01112024.tsv.gz") #cell cycle data
+df <- loadWholeWtDataset(rawdata_path = "../data/2021_RAPA_TIMECOURSE.tsv.gz",
+                         metadata_path = "../data/Cell_Cycle_Metadata_01112024.tsv.gz")
 
 #load gene info
-ensembl <- useMart(biomart = "ENSEMBL_MART_ENSEMBL",
-                   dataset = "scerevisiae_gene_ensembl") 
-
-gen_des <- getBM(attributes = c("ensembl_gene_id",
-                                "description",
-                                "external_gene_name"),
-                 mart = ensembl)
-
-colnames(gen_des) <- c("genes", 
-                       "description",
-                       "common_name")
-
-rm("ensembl")
+gen_des <- readRDS("../results/Gene_Variance/gensets_and_description.Rds") %>%
+  select(-c("gene_Set"))
 
 ```
 
-# Data wrangling
-
-Divide cells into 3 minutes bins and transform df into list
+Since we don't have many cells per timebin after rapa tratment, we decided to merge sampling timepoints (column Pool) two by two. Then transform df into list (each element is a sampling point) to be able to loop functions through the list. 
 
 ```{r}
-df <- cbind(rawdata, metadata) #merge data and metadata
-
 #merge timepoints 2 by 2 to get enough cells in each bin
 df$Pool <- str_replace_all(df$Pool, c("1" = "2", 
                                       "3" = "4", 
                                       "5" = "6", 
                                       "7" = "8"))
-
-df <- df %>%
-  filter(Gene %in% "WT") %>% #only wt strain
-  drop_na() %>% #remove empty levels
-  mutate(max = max(Cell_Cycle_Time), #divide cells in time bins
-         min = min(Cell_Cycle_Time),
-         width = (max-min)/30,
-         bin1 = ceiling((Cell_Cycle_Time - min)/width),
-         time_interval = ifelse(Cell_Cycle_Time == min, 
-                                bin1 + 1, 
-                                bin1),
-         time_interval = time_interval * 3) %>% #each bin should reflect minutes
-  select(-c("max", "min", "width", "bin1")) %>%
-  mutate(time_interval = factor(time_interval)) %>%
-  group_split(Pool) #split into groups
-
-#assign names to list elements
-names(df) <- 1:length(df) #mock names to make loop work
-for (i in 1:length(df)) { 
-  names(df)[i] <- unique(df[[i]]$Pool) #assign correct names
-}
+df <- split(df , f = df$Pool)
 
 ```
 
 # Check how many cells we have in each bin
 
-```{r}
+```{r, fig.show='hold', out.width='25'}
 for (i in 1:length(df)) {
   tmp <- df[[i]] %>%
     count(time_interval) %>% 
@@ -103,18 +76,18 @@ for (i in 1:length(df)) {
 
 ```
 
-In some timepoints I have a very low number of cells - still continuing with the code but this should be discussed and need to be aware of it.
-
 # Discard bins with not enough cells
 
 ## Remove bins that do not contain enough cells 
 
+In some timepoints, even after merging two sampling points, I have a very low number of cells.
 Since some bins do not have enough cells to make a proper reliable linear model to calculate residuals, I remove those bins from the analysis.
 
 ```{r}
 #get the mininum amount of cells in timeponts 1 and 2
 X <- as.numeric(min(table(df$`2`$time_interval)))
 
+#remove timebins with less than those cells
 df <- df %>%
   map(~.x %>%
         group_by(time_interval) %>%
@@ -140,6 +113,8 @@ for (i in 1:length(df)){
 
 # Intra cluster for each timepoint
 
+For each sampling point we take each timebin (that remained after removing those without enough cells) - for each timebin we calculate mean, standard deviation, and coefficient of variation. Then we build a linear model (coefficient of variation vs mean) and calculate the residuals. To extract the genes that are the most variable across all timebins, we rank genes based on their residuals (decreasing order) and then rank combine genes across timebins (basically sum the rank of genes across different timebing). The higher the rank, the more variable the gene is across the sampling points we have in the data (in this case before rapamycin treatment).
+
 ## Perform intracluster analysis 
 
 ```{r}
@@ -160,11 +135,8 @@ for (j in 1:length(df)) {
       tmp <- tmp2 %>%
         filter(time_interval %in% levels(tmp2$time_interval)[i]) %>%
         select(-c("Gene", "Replicate", "Pool", "Experiment", "Cell_Cycle_Phase",
-                  "Cell_Cycle_Time", "time_interval")) %>%
-        filter(rowSums(.) < 15000) #remove cells with counts above 15000
-    
-      tmp <- tmp*10000/rowSums(tmp) #normalize df
-  
+                  "Cell_Cycle_Time", "time_interval"))
+
     #calculate mean, sd, and coefficient of variation
       tmp_stats <- as.data.frame(t( #transpose to make df ggplot friendly
         rbind(mean = apply(tmp, 2, mean, na.rm = T),
@@ -202,7 +174,7 @@ for (j in 1:length(df)) {
                     color = "red",
                     linewidth = 1) +
         ggtitle(paste0(
-          levels(tmp$time_interval)[i],
+          levels(tmp2$time_interval)[i],
           " minutes",
           "_log of x and y, mean > 0.01"))
 
@@ -268,6 +240,8 @@ for (i in 1:length(intracluster_output)) {
 
 # Plot the most variable genes over the experiment
 
+For each sampling point, I am going to extract the most variable genes (higher scaled rank in that specific sampling point). After extracting those genes, i will fetch their rank across all sampling points and plot the trand to check if the variability associated with that gene increases or decreases. 
+
 ```{r, fig.width=6, fig.height=8}
 for (i in 1:length(intracluster_output)) {
   
@@ -312,6 +286,6 @@ for (i in 1:length(intracluster_output)) {
 
 ```{r}
 saveRDS(intracluster_output,
-        file = "../results/intracluster_analysis_output.Rds")
+        file = "../results/IntraCluster_AllTimePoints/intracluster_analysis_output.Rds")
 ```
 
