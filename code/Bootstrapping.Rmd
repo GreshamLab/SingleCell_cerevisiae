@@ -72,9 +72,9 @@ Perform bootstrap and save the regression lines and the residuals of each iterat
 reg_lines <- data.frame() #create df to store regression lines
 residuals <- data.frame() #create df to store residuals
 
-sample_size = c(250, 500, 1000, 1500, 2000, 6000) #how many cells to sample
+sample_size = c(250, 500, 750, 1000, 1500, 2000) #how many cells to sample
 
-nperm <- 500 #set how many times to re-sample
+nperm <- 1000 #set how many times to re-sample
 
 for (j in 1:length(sample_size)) { #iterates for all the sample sizes i want
   for (i in 1:nperm) { #repeats the sampling X times
@@ -123,6 +123,7 @@ tmp <- select(df_stats, c("genes", "residuals")) %>%
   mutate(sample_size = 45237)
 residuals <- rbind(residuals, tmp)
 
+saveRDS(reg_lines, "../results/Bootstrapping/regression_lines.Rds")
 rm("tmp")
 
 ```
