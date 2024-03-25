@@ -125,7 +125,8 @@ srat@meta.data <- srat@meta.data %>%
          min = min(Cell_Cycle_Time), 
          width = (max-min)/30, 
          bin1 = ceiling((Cell_Cycle_Time-min)/width),
-         time_interval = ifelse(Cell_Cycle_Time==min, bin1 + 1, bin1)) %>%
+         time_interval = ifelse(Cell_Cycle_Time==min, bin1 + 1, bin1)
+         time_interval = time_interval * 3) %>%
   select(-c("max", "min", "width", "bin1")) %>%
   mutate(Cell_Cycle_Phase = as.factor(Cell_Cycle_Phase)) %>% #order cell cycle
   mutate(Cell_Cycle_Phase = fct_relevel(Cell_Cycle_Phase,
