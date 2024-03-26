@@ -25,6 +25,7 @@ We find that FIT2 and FIT3 tend to be both highly expressed whenever are highly 
 ```{r, warning=FALSE, message=FALSE}
 library(tidyverse)
 library(reshape2)
+library(gridExtra)
 library(ggExtra, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
 library(knitr)
 library(kableExtra)
@@ -370,21 +371,27 @@ tmp <- df_full %>%
 
 Plot FIT2 and FIT3 gene counts against each other in every timepoint.
 
-```{r, out.width='50%'}
+```{r, fig.height=12, fig.width=6}
+plots <- list()
+
 for (i in 1:length(unique(levels(tmp$Pool)))) {
   tmp_plot <- tmp %>%
     filter(Pool %in% unique(levels(tmp$Pool))[i]) %>%
     ggplot(aes(x = log10(YOR382W+1),
                y = log10(YOR383C+1))) +
-  xlab("FIT2") +
-  ylab("FIT3") +
-  ggtitle("Log10 Scale") +
-  geom_point(alpha = 0.2) +
-  ggtitle(paste("Sampling point", unique(levels(tmp$Pool))[i]))
+    xlab("FIT2") +
+    ylab("FIT3") +
+    ggtitle("Log10 Scale") +
+    geom_point(alpha = 0.2) +
+    ggtitle(paste("Sampling point", unique(levels(tmp$Pool))[i])) +
+    theme_minimal()
 
-  print(ggMarginal(tmp_plot, type = "density"))
-    
-  }
+  plots[[i]] <- ggMarginal(tmp_plot, type = "density")
+  
+
+}
+
+grid.arrange(grobs = plots, ncol = 2)
 
 ```
 
