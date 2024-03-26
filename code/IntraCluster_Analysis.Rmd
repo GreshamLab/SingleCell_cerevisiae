@@ -68,12 +68,14 @@ gen_des <- readRDS("../results/Gene_Variance/gensets_and_description.Rds") %>%
 Check how many cells we have in each bin to make sure we have at least 800/100 minimum
 
 ```{r}
-df %>%
-  count(time_interval) %>% 
+tmp <- df %>%
+  count(time_interval)
+tmp %>%
   ggplot(aes(x = time_interval,
                    y = n)) +
   geom_bar(stat = "identity") +
   ylab("#cells")
+saveRDS(tmp, "../results/IntraCluster_Analysis/cells_in_bins.Rds")
 
 ```
 
@@ -377,7 +379,7 @@ Trying to plot high variability next to low variability, I noticed that the low 
 The goal of this is to visualize how gene counts are distributed for high vs low variability genes.
 
 ```{r, fig.height=12, fig.width=10}
-df %>%
+tmp <- df %>%
   select(c("YOR383C",  #high var
            "YOR234C", #low var
            "YLR286C", #high var
@@ -399,7 +401,10 @@ df %>%
                               "EGD1|YPL037C",
                               "RPL39|YJL189W",
                               "EFT1|YOR133W"))) %>%
-  select(c("time_interval","counts","gene")) %>%
+  select(c("time_interval","counts","gene"))
+saveRDS(tmp, "../results/IntraCluster_Analysis/high_vs_low_var_data.Rds")
+
+tmp %>%
   ggplot(aes(x = time_interval,
              y = counts)) +
   geom_violin() +
@@ -463,7 +468,7 @@ tmp %>%
 ## Plot their gene counts
 
 ```{r, fig.height=40, fig.width=10}
-df %>%
+tmp <- df %>%
   select(c(all_of(common_genes))) %>% #select the interesting genes
   cbind(df[5848:5850]) %>% #keep metadata as well
   melt(id = c("Cell_Cycle_Phase", "Cell_Cycle_Time", "time_interval"),
@@ -473,7 +478,11 @@ df %>%
   mutate(gene = paste(common_name, genes, sep = "|")) %>% #use both genes names
   arrange(match(genes, rank_combine$genes[1:100])) %>% #arrange genes based on residuals
   mutate(gene = factor(gene, levels = unique(gene))) %>% #convert to levels
-  select(c("time_interval","counts","gene")) %>%
+  select(c("time_interval","counts","gene"))
+
+saveRDS(tmp, "../results/IntraCluster_Analysis/gene_counts_low_mean_high_var.Rds")
+
+tmp %>%
   ggplot(aes(x = time_interval,
              y = counts)) +
   geom_violin() +
@@ -540,7 +549,7 @@ tmp <- df %>%
   ggtitle("Log10 Scale") +
   geom_point()
 
-ggMarginal(tmp, type = "densigram")
+ggMarginal(tmp, type = "density")
 
 ```
 
