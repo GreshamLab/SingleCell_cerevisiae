@@ -106,7 +106,7 @@ colnames(rsq_matrix) <- common_genes
 rownames(rsq_matrix) <- common_genes
 
 #save the correlation matrix
-saveRDS(rsq_matrix, file = "../results/IntraCluster_Analysis_FIT2vsFIT3/correlation_matrix.Rmd")
+saveRDS(rsq_matrix, file = "../results/IntraCluster_Analysis_FIT2vsFIT3/correlation_matrix.Rds")
 
 ```
 
