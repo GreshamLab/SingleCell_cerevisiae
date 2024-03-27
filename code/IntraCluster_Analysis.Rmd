@@ -39,6 +39,8 @@ library(knitr)
 library(kableExtra)
 library(tidyheatmaps, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
 source("functions/loadNoRapaTreat.R")
+library(clusterProfiler, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
+library(org.Sc.sgd.db, lib.loc = "../../R/x86_64-pc-linux-gnu/4.3/")
 
 #Solve conflicts
 conflict_prefer("select", "dplyr")
@@ -420,7 +422,6 @@ The most interesting genes are those with a very low mean, so overall low expres
 
 ## Plot their mean and residuals
 
-
 ```{r, fig.height=40, fig.width=10}
 tmp <- stats_list %>%
   map(~ filter(.x, mean < 1)) %>% #keep genes with low counts
@@ -563,4 +564,72 @@ saveRDS(rank_combine,
 
 ```
 
+# Run GSEA on ranked genes and on stochastic genes
 
+## GSEA on ranked genes
+
+```{r}
+gse_res <- list()
+
+original_gene_list <- rank_combine$rank_combined #rank on rank_combined
+names(original_gene_list) <- rank_combine$genes # name the vector
+gene_list <- na.omit(original_gene_list) # omit any NA values 
+gene_list = sort(gene_list, decreasing = TRUE) # sort in decreasing order 
+
+#Run GSEA
+gse_res$full_df <- 
+  gseGO(geneList = gene_list, 
+        ont ="ALL", 
+        keyType = "ENSEMBL", 
+        minGSSize = 5, 
+        maxGSSize = 500, 
+        pvalueCutoff = 0.05,
+        verbose = T, 
+        scoreType = "pos",
+        OrgDb = org.Sc.sgd.db, 
+        pAdjustMethod = "none")
+
+dotplot(gse_res$full_df, showCategory=15)
+
+```
+
+## GSEA on stochastic genes
+
+```{r, fig.height=10, fig.width=8}
+tmp <- stats_list %>%
+  map(~ filter(.x, mean < 1)) %>% #keep genes with low counts
+  map(~ filter(.x, #keep genes with high rank
+               genes %in% unique(grep(paste(rank_combine$genes[1:500],
+                                            collapse="|"),
+                                            genes,
+                                            value = T))))
+#need to break the pipe to get the common genes out
+common_genes <- Reduce(intersect, #get genes present in all timebins 
+                       lapply(tmp, 
+                              function(x) {
+                                x$genes}))
+
+rank_combine_filtered <- rank_combine %>%
+  filter(genes %in% common_genes)
+
+original_gene_list <- rank_combine_filtered$rank_combined #rank on rank_combined
+names(original_gene_list) <- rank_combine_filtered$genes #name the vector
+gene_list <- na.omit(original_gene_list) #omit any NA values 
+gene_list = sort(gene_list, decreasing = TRUE) #sort list
+
+#Run GSEA
+gse_res$filtered <- 
+  gseGO(geneList = gene_list, 
+        ont ="ALL", 
+        keyType = "ENSEMBL", 
+        minGSSize = 5, 
+        maxGSSize = 500, 
+        pvalueCutoff = 0.05,
+        verbose = T, 
+        scoreType = "pos",
+        OrgDb = org.Sc.sgd.db, 
+        pAdjustMethod = "none")
+
+dotplot(gse_res$filtered, showCategory=15)
+
+```
