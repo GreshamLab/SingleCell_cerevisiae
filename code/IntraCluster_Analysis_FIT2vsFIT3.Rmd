@@ -37,6 +37,7 @@ source("functions/LoadWholeWtDataset.R")
 
 conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
+conflict_prefer("union", "base")
 
 #Create directory to save output
 if (!dir.exists("../results/IntraCluster_Analysis_FIT2vsFIT3")){
