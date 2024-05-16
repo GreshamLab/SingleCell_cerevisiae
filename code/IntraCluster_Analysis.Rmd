@@ -539,7 +539,7 @@ And do a marginal plot
 
 ```{r, fig.keep='last', warning=FALSE}
 tmp <- df %>%
-  select(c("YML100W", "YMR261C")) %>% #select FIT2 and FIT3 genes
+  select(c("YML100W", "YMR261C")) %>% #select genes
   rename(TSL1_YML100W = YML100W,
          TPS3_YMR261C = YMR261C) %>%
   cbind(df[5848:5850]) %>% #keep metadata as well
