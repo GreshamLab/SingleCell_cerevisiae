@@ -428,3 +428,24 @@ corr_all_timepoints %>%
 ```
 
 The correlation between FIT2 and FIT3 across sampling points (so later with RAPA tratment) decreases. This is a very interesting result and we'll dig deeper into it.
+
+# Is FIT2 FIT3 correlation the same in the two batches we have?
+
+```{r}
+pool_1 <- df %>%
+  filter(Pool == 1) %>%
+  select(c("YOR382W", "YOR383C"))
+pool_1_lm <- lm(YOR382W ~ YOR383C, data = pool_1)
+print(paste("Pool 1:", summary(pool_1_lm)$r.squared))
+
+pool_2 <- df %>%
+  filter(Pool == 2) %>%
+  select(c("YOR382W", "YOR383C"))
+pool_2_lm <- lm(YOR382W ~ YOR383C, data = pool_2)
+print(paste("Pool 2:", summary(pool_2_lm)$r.squared))
+
+  
+
+```
+
+
