@@ -169,8 +169,23 @@ PCA plot, faceted by metadata infos
 DimPlot(srat, reduction = "pca", group.by = "Replicate")
 DimPlot(srat, reduction = "pca", group.by = "Pool")
 DimPlot(srat, reduction = "pca", group.by = "Experiment")
-DimPlot(srat, reduction = "pca", group.by = "Cell_Cycle_Phase")
-DimPlot(srat, reduction = "pca", group.by = "time_interval")
+
+#pdf("Cell_Cycle_Phase.pdf", width = 5, height = 4)
+DimPlot(srat, reduction = "pca", group.by = "Cell_Cycle_Phase") +
+  scale_color_manual(
+    values = brewer.pal(5, "Set2"))
+#dev.off()
+
+```
+
+
+```{r, fig.show='hold'}
+pdf("Cell_Cycle_Time.pdf", width = 5, height = 4)
+
+FeaturePlot(object = srat, features = "Cell_Cycle_Time") +
+  scale_color_viridis_c(option = "magma",
+                        direction = -1)
+dev.off()
 
 ```
 
