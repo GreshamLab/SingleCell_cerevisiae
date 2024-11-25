@@ -306,8 +306,6 @@ colnames(gen_des) <- c("genes",
 
 gen_des$gene_name <- paste0(gen_des$common_name, "|", gen_des$genes)
 
-saveRDS(gen_des, file = "../results/Gene_Variance/gensets_and_description.Rds")
-
 rm("ensembl")
 
 ```
@@ -357,6 +355,12 @@ subset(df_norm, select= (df_stats$genes)[1:10]) %>%
   geom_violin() +
   ggtitle("Distribution of gene counts, log10 y scale") +
   theme(axis.text.x = element_text(angle = 45, hjust=1))
+
+#export top 20 genes
+write.csv2(x = subset(df_norm, select = (df_stats$genes)[1:20]) %>%
+  rownames_to_column("cell") %>%
+  melt(id = "cell"),
+  file = "../results/Gene_Variance/counts_top_genes.csv")
 
 ```
 
