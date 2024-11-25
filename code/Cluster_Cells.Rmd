@@ -24,10 +24,13 @@ library(tidyverse)
 library(reshape2)
 library(Seurat)
 library(conflicted)
+library(RColorBrewer)
 
 conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
 conflict_prefer("mutate", "dplyr")
+
+if (!dir.exists("../results/Cluster_Cells")){dir.create("../results/Cluster_Cells/")}
 
 ```
 
@@ -169,27 +172,53 @@ PCA plot, faceted by metadata infos
 DimPlot(srat, reduction = "pca", group.by = "Replicate")
 DimPlot(srat, reduction = "pca", group.by = "Pool")
 DimPlot(srat, reduction = "pca", group.by = "Experiment")
-
-#pdf("Cell_Cycle_Phase.pdf", width = 5, height = 4)
-DimPlot(srat, reduction = "pca", group.by = "Cell_Cycle_Phase") +
-  scale_color_manual(
-    values = brewer.pal(5, "Set2"))
-#dev.off()
+DimPlot(srat, reduction = "pca", group.by = "Cell_Cycle_Phase")
 
 ```
 
 
-```{r, fig.show='hold'}
-pdf("Cell_Cycle_Time.pdf", width = 5, height = 4)
+Export figures for paper 
 
-FeaturePlot(object = srat, features = "Cell_Cycle_Time") +
+```{r, warning=FALSE, message=FALSE}
+#calculate explained variance
+pca_var <- Stdev(srat, reduction = "pca")^2
+pca_var_percent <- round(pca_var / sum(pca_var) * 100, 2)
+x_label <- paste0("PC1 (", pca_var_percent[1], "%)")
+y_label <- paste0("PC2 (", pca_var_percent[2], "%)")
+
+#Cell cycle phase
+pdf("../results/Cluster_Cells/Cell_Cycle_Phase.pdf", width = 5, height = 4)
+DimPlot(srat, 
+        reduction = "pca", 
+        group.by = "Cell_Cycle_Phase") +
+  scale_color_manual(
+    values = brewer.pal(5, "Set2")) +
+  coord_fixed() +
+  scale_x_continuous(name = x_label,
+                     limits = c(-15, 15)) +
+  scale_y_continuous(name = y_label,
+                     limits = c(-15, 15)) +
+  theme(legend.position = "none")
+dev.off()
+
+#Time in the cell cycle
+pdf("../results/Cluster_Cells/Cell_Cycle_Time.pdf", width = 5, height = 4)
+FeaturePlot(object = srat, 
+            features = "Cell_Cycle_Time") +
   scale_color_viridis_c(option = "magma",
-                        direction = -1)
+                        direction = -1) +
+  coord_fixed() +
+  scale_x_continuous(name = x_label,
+                     limits = c(-15, 15)) +
+  scale_y_continuous(name = y_label,
+                     limits = c(-15, 15)) +
+  theme(legend.position = "none")
 dev.off()
 
 ```
 
 # UMAP
+
 I will use the first 7 dims (from the elbow plot we can see that after the 7th dimension the PCs do not explain variation anymore)
 
 ```{r}
