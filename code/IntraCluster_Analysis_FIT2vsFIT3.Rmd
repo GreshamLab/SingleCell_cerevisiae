@@ -121,7 +121,9 @@ tmp <- rsq_matrix %>%
   drop_na() %>%
   arrange(desc(value))
 
-write.csv2(tmp, "../scratch/gene_expr_correlation.csv")
+write.csv2(tmp, 
+           "../results/IntraCluster_Analysis_FIT2vsFIT3/gene_expr_correlation.csv",
+           row.names = F)
 
 tmp %>%
   ggplot(aes(x = value)) +
@@ -248,7 +250,7 @@ tmp <- df %>%
 write.csv2(df %>%
              select(c("YOR382W", "YOR383C")) %>% #select FIT2 and FIT3 genes
              cbind(df[5848:5850]), #keep metadata as well
-           "../scratch/FIT_marginal_plot.csv")
+           "../results/IntraCluster_Analysis_FIT2vsFIT3/FIT_marginal_plot.csv")
 
 ggMarginal(tmp, type = "density")
 

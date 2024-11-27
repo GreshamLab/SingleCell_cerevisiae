@@ -77,7 +77,21 @@ tmp %>%
                    y = n)) +
   geom_bar(stat = "identity") +
   ylab("#cells")
-saveRDS(tmp, "../results/IntraCluster_Analysis/cells_in_bins.Rds")
+
+```
+
+Export data to plot for paper
+
+```{r}
+#export #cells in bins
+write.csv2(tmp, "../results/IntraCluster_Analysis/cells_in_bins.csv") 
+
+#export top X genes and their expression profile over time
+top_genes <- unique(read.csv2("../results/Gene_Variance/counts_top_genes.csv")$variable)
+top_counts <- df[1:5843] %>%
+  select(all_of(top_genes)) %>%
+  cbind(df[5848:5850])
+write.csv2(top_counts, "../results/IntraCluster_Analysis/top_counts.csv", row.names = F)
 
 ```
 
@@ -404,7 +418,9 @@ tmp <- df %>%
                               "RPL39|YJL189W",
                               "EFT1|YOR133W"))) %>%
   select(c("time_interval","counts","gene"))
-saveRDS(tmp, "../results/IntraCluster_Analysis/high_vs_low_var_data.Rds")
+write.csv2(tmp, 
+           "../results/IntraCluster_Analysis/high_vs_low_var_data.csv",
+           row.names = F)
 
 tmp %>%
   ggplot(aes(x = time_interval,
@@ -436,7 +452,7 @@ common_genes <- Reduce(intersect, #get genes present in all timebins
                               function(x) {
                                 x$genes}))
 
-tmp %>% 
+tmp %>%
   map(~ filter(.x, #only keep genes in the all timebins
                genes %in% unique(grep(paste(common_genes,
                           collapse="|"),
@@ -481,7 +497,9 @@ tmp <- df %>%
   mutate(gene = factor(gene, levels = unique(gene))) %>% #convert to levels
   select(c("time_interval","counts","gene"))
 
-saveRDS(tmp, "../results/IntraCluster_Analysis/gene_counts_low_mean_high_var.Rds")
+write.csv2(tmp, 
+           "../results/IntraCluster_Analysis/stochastic_genes_counts.csv",
+           row.names = F)
 
 tmp %>%
   ggplot(aes(x = time_interval,
@@ -561,6 +579,9 @@ saveRDS(stats_list,
         file = "../results/IntraCluster_Analysis/stats_list.Rds")
 saveRDS(rank_combine,
         file = "../results/IntraCluster_Analysis/rank_combine.Rds")
+write.csv2(rank_combine,
+        file = "../results/IntraCluster_Analysis/rank_combine.csv",
+        row.names = F)
 
 ```
 
@@ -611,6 +632,10 @@ common_genes <- Reduce(intersect, #get genes present in all timebins
 
 rank_combine_filtered <- rank_combine %>%
   filter(genes %in% common_genes)
+
+write.csv2(rank_combine_filtered,
+           "../results/IntraCluster_Analysis/stochastic_genes.csv",
+           row.names = F)
 
 original_gene_list <- rank_combine_filtered$rank_combined #rank on rank_combined
 names(original_gene_list) <- rank_combine_filtered$genes #name the vector
