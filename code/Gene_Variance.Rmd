@@ -306,6 +306,8 @@ colnames(gen_des) <- c("genes",
 
 gen_des$gene_name <- paste0(gen_des$common_name, "|", gen_des$genes)
 
+saveRDS(gen_des, file = "../results/Gene_Variance/gensets_and_description.Rds")
+
 rm("ensembl")
 
 ```
