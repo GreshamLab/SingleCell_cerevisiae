@@ -194,8 +194,8 @@ DimPlot(srat,
   scale_color_manual(
     values = brewer.pal(5, "Set2")) +
   coord_fixed() +
-  scale_x_continuous(name = x_label,
-                     limits = c(-15, 15)) +
+  scale_x_reverse(name = x_label,
+                  limits = c(15, -15)) + 
   scale_y_continuous(name = y_label,
                      limits = c(-15, 15)) +
   theme(legend.position = "none")
@@ -204,12 +204,13 @@ dev.off()
 #Time in the cell cycle
 pdf("../results/Cluster_Cells/Cell_Cycle_Time.pdf", width = 5, height = 4)
 FeaturePlot(object = srat, 
-            features = "Cell_Cycle_Time") +
+            features = "Cell_Cycle_Time",
+            order = TRUE) +
   scale_color_viridis_c(option = "magma",
                         direction = -1) +
   coord_fixed() +
-  scale_x_continuous(name = x_label,
-                     limits = c(-15, 15)) +
+  scale_x_reverse(name = x_label,
+                  limits = c(15, -15)) + 
   scale_y_continuous(name = y_label,
                      limits = c(-15, 15)) +
   theme(legend.position = "none")
