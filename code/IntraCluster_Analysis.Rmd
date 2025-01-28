@@ -87,7 +87,7 @@ Export data to plot for paper
 write.csv2(tmp, "../results/IntraCluster_Analysis/cells_in_bins.csv") 
 
 #export top X genes and their expression profile over time
-top_genes <- unique(read.csv2("../results/Gene_Variance/counts_top_genes.csv")$variable)
+top_genes <- c(unique(read.csv2("../results/Gene_Variance/counts_top_genes.csv")$variable), "YHR087W")
 top_counts <- df[1:5843] %>%
   select(all_of(top_genes)) %>%
   cbind(df[5848:5850])
