@@ -18,8 +18,13 @@ The idea is to assign time and cell cycle to cells and then look at the variance
 # Load packages
 
 ```{r, results='hide', message=FALSE}
+library(conflicted)
 library(tidyverse)
+library(ggridges)
+
 source("functions/loadNoRapaTreat.R")
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
 
 #create folders
 if (!dir.exists("../results/Bootstrapping")){
@@ -38,31 +43,6 @@ df <- loadNoRapaTreat(rawdata_path = "../data/2021_RAPA_TIMECOURSE.tsv.gz",
 df_stats <- read.csv2("../results/Gene_Variance/gene_stats_and_description.csv", 
                       row.names = 1)
 ```
-
-# Count cells in each cell cycle phase and in each timepoint
-
-Count cells in each cell cycle phase and in each timepoint. Based on this, we will decide the sizes of the resampling when bootstrapping
-
-```{r}
-barplot(table(df$Cell_Cycle_Phase),
-        main = "Cells in each cell cycle phase")
-
-```
-
-```{r, fig.show='hold', out.width='50%' }
-hist(df$Cell_Cycle_Time, 
-     breaks = 44,
-     main = "Each bin is 2 minutes of pseudotime",
-     xlab = "Pseudotime")
-
-hist(df$Cell_Cycle_Time, 
-     breaks = 30,
-     main = "Each bin is 3 minutes of pseudotime",
-     xlab = "Pseudotime")
-
-```
-
-The lowest amount of cells in a bin is 500, so I will start the bootstrap procedure from 250, out of curiosity, and then increase it.
 
 # Bootstrap
 
@@ -123,7 +103,11 @@ tmp <- select(df_stats, c("genes", "residuals")) %>%
   mutate(sample_size = 45237)
 residuals <- rbind(residuals, tmp)
 
-saveRDS(reg_lines, "../results/Bootstrapping/regression_lines.Rds")
+write.csv2(reg_lines,
+           "../results/Bootstrapping/regression_lines.csv")
+write.csv2(residuals,
+           "../results/Bootstrapping/residuals.csv")
+
 rm("tmp")
 
 ```
@@ -199,6 +183,139 @@ spearman_coeff <- cor(mean_res, method = "spearman" )
 write.csv2(spearman_coeff, "../results/Bootstrapping/spearman_coeff.csv")
 
 spearman_coeff
+
+```
+
+# Calculate confidence intervals
+
+```{r}
+ci_results <- residuals %>%
+  group_by(genes, sample_size) %>%
+  summarise(
+    lower = quantile(residuals, 0.025, na.rm = TRUE),
+    upper = quantile(residuals, 0.975, na.rm = TRUE),
+    mean_residual = mean(residuals, na.rm = TRUE),
+    .groups = "drop") %>%
+  drop_na()
+
+write.csv2(ci_results,
+           "../results/Bootstrapping/confidence_interval.csv")
+
+```
+
+```{r}
+ci_results %>%
+  filter(!sample_size == "45237") %>%
+  group_by(sample_size) %>%
+  summarise(
+    mean_ci_width = mean(upper - lower, na.rm = TRUE),
+    median_ci_width = median(upper - lower, na.rm = TRUE),
+    .groups = "drop") %>%
+  ggplot(aes(x = sample_size, 
+             y = mean_ci_width)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Confidence Interval Width vs. Sample Size",
+    x = "Sample Size",
+    y = "Mean CI Width") +
+  theme_minimal()
+
+```
+
+```{r, warning=FALSE, message=FALSE}
+ci_results %>%
+  ggplot() +
+  geom_density_ridges(
+    aes(x = mean_residual, 
+        y = as.factor(sample_size), 
+        fill = as.factor(sample_size)),
+    alpha = 0.6, 
+    scale = 2, 
+    ) +
+  scale_x_continuous(limits = c(-0.1, 0.1))+
+  labs(
+    x = "Residual Values",
+    y = "Sample Size",
+    fill = "Sample Size"
+  ) +
+  theme_minimal()
+
+```
+
+# Count cells in each cell cycle phase and in each timepoint
+
+Count cells in each cell cycle phase and in each timepoint. Based on this, we will decide the sizes of the resampling when bootstrapping
+
+## Count in cell cycle phase
+
+```{r}
+ggplot(df, 
+       aes(x = factor(Cell_Cycle_Phase, 
+                      levels = c("G1", "S", "G2", "M", "M-G1")))) +
+  geom_bar(fill = "grey") +
+  labs(
+    title = "Cells in Each Cell Cycle Phase",
+    x = "Cell Cycle Phase",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+## Count in cell cycle time
+
+```{r}
+interval_sizes <- c(1, 2, 3, 4, 5, 6)
+cells_in_timebins <- list()
+
+# Loop over the interval sizes
+for (interval in interval_sizes) {
+  tmp <- df %>%
+    mutate(time_bin = floor(Cell_Cycle_Time / interval) * interval) %>%
+    count(time_bin) %>%
+    arrange(time_bin) %>%
+    mutate(interval = interval)
+  cells_in_timebins <- rbind(cells_in_timebins, tmp)
+}
+
+write.csv2(cells_in_timebins,
+           "../results/Bootstrapping/cells_in_timebins.csv")
+
+rm(interval_sizes, tmp)
+
+```
+
+Plot
+
+```{r}
+cells_in_timebins %>%
+  ggplot(aes(x=time_bin,
+             y=n)) + 
+  geom_bar(stat = "identity") + 
+  theme_bw() + 
+  ggtitle("Cell count distribution based on bin size (minutes)") +
+  facet_wrap(~interval,
+             scales = "free_y")
+
+```
+
+Plot minimum bin size vs size of timebin
+
+```{r}
+cells_in_timebins %>%
+  filter(time_bin >= 3 & time_bin <= 86) %>% #remove tail ends where counting is not very accurate
+  group_by(interval) %>%
+  summarise(min_n = min(n)) %>%
+  ggplot(aes(x = interval, 
+             y = min_n)) +
+  geom_point(size = 3) +
+  geom_line() +
+  scale_x_continuous(breaks = 1:6) +
+  labs(title = "Minimum Cell Counts in Each Interval", 
+       x = "Interval", 
+       y = "Cell Count (n)") +
+  theme_minimal()
 
 ```
 
